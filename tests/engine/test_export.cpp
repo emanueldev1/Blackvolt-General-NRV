@@ -54,35 +54,36 @@ TEST(export_default_encoders_prefer_hardware) {
 
 TEST(export_transcodes_and_scales_clip) {
     const auto output = tempFile("bv_export_test.mkv");
-    std::filesystem::remove(output);
+    std::error_code ec;
+    std::filesystem::remove(output, ec);
     Job job;
     Options o;
     o.input = kClip;
     o.output = output;
     o.codec = Codec::H264;
     o.height = 360;
-    av_log_set_level(AV_LOG_VERBOSE); // diagnóstico si algo se atasca en CI
     // Software encoders only, so the test runs anywhere.
     o.encoders = {"libx264", "mpeg4"};
     job.start(o);
     const auto p = runToEnd(job);
-    av_log_set_level(AV_LOG_INFO);
     if (p.state != State::Done) std::printf("  export: %s\n", p.message.c_str());
     CHECK(p.state == State::Done);
     CHECK(p.frames > 10);
     CHECK(p.outHeight == 360);
     CHECK(!p.hardware);
 
-    std::printf("  export: comprobando %s\n", output.c_str());
-    std::string error;
-    auto d = bv::media::Demuxer::open(output, &error);
-    std::printf("  export: abierto=%d %s\n", d.has_value() ? 1 : 0, error.c_str());
-    CHECK(d.has_value());
-    if (d) {
-        CHECK(d->video().params->height == 360);
-        CHECK(d->durationSeconds() > 1.5);
+    {
+        // Scoped: Windows cannot delete a file that is still open.
+        std::string error;
+        auto d = bv::media::Demuxer::open(output, &error);
+        CHECK(d.has_value());
+        if (d) {
+            CHECK(d->video().params->height == 360);
+            CHECK(d->durationSeconds() > 1.5);
+        }
     }
-    std::filesystem::remove(output);
+    std::filesystem::remove(output, ec);
+    CHECK(!ec);
 }
 
 TEST(export_cancel_removes_output) {
@@ -98,7 +99,8 @@ TEST(export_cancel_removes_output) {
     const auto p = job.progress();
     CHECK(p.state == State::Cancelled || p.state == State::Done);
     if (p.state == State::Cancelled) CHECK(!std::filesystem::exists(output));
-    std::filesystem::remove(output);
+    std::error_code ec;
+    std::filesystem::remove(output, ec);
 }
 
 TEST(export_c_api_reports_errors) {
