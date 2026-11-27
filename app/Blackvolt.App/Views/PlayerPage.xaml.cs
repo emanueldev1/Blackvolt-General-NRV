@@ -45,6 +45,7 @@ public sealed partial class PlayerPage : Page
             _player.SetEnhance(AppSettings.Current.Video);
             ResizeSwapChain();
             _timer.Start();
+            if (e.Parameter is OpenMedia media) OpenUrl(media.Url, media.Title);
         }
         catch (EngineException ex)
         {
@@ -57,6 +58,25 @@ public sealed partial class PlayerPage : Page
         _timer.Stop();
         _player?.Dispose();
         _player = null;
+    }
+
+    private void OpenUrl(string url, string title)
+    {
+        if (_player is null) return;
+        ErrorBar.IsOpen = false;
+        try
+        {
+            _player.Open(url);
+            _player.Play();
+        }
+        catch (EngineException ex)
+        {
+            ShowError(ex.Message);
+            return;
+        }
+        SourceText.Text = title;
+        EmptyState.Visibility = Visibility.Collapsed;
+        Transport.Visibility = Visibility.Visible;
     }
 
     private async Task OpenFileAsync(string path)
@@ -81,14 +101,20 @@ public sealed partial class PlayerPage : Page
         }
 
         PlayIcon.Glyph = info.State == State.Playing ? "" : "";
-        if (!_scrubbing && info.DurationS > 0)
+        bool live = info.Live != 0;
+        Timeline.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+        if (live)
+        {
+            TimeText.Text = "EN DIRECTO";
+        }
+        else if (!_scrubbing && info.DurationS > 0)
         {
             _updatingTimeline = true;
             Timeline.Maximum = info.DurationS;
             Timeline.Value = Math.Min(info.PositionS, info.DurationS);
             _updatingTimeline = false;
         }
-        TimeText.Text = $"{Format(info.PositionS)} / {Format(info.DurationS)}";
+        if (!live) TimeText.Text = $"{Format(info.PositionS)} / {Format(info.DurationS)}";
 
         // Hide the transport after 3 s without mouse movement while playing.
         if (info.State == State.Playing && Transport.Visibility == Visibility.Visible &&
@@ -152,6 +178,7 @@ public sealed partial class PlayerPage : Page
     {
         if (_player is null) return;
         var info = _player.Info;
+        if (info.Live != 0) return;
         _player.Seek(Math.Clamp(info.PositionS + delta, 0, Math.Max(0, info.DurationS - 0.1)));
     }
 

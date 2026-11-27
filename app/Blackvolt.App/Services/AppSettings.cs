@@ -7,6 +7,7 @@ internal sealed class AppSettings
 {
     public RemotePlaySettings RemotePlay { get; set; } = new();
     public VideoSettings Video { get; set; } = new();
+    public CaptureSettings Capture { get; set; } = new();
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Blackvolt", "settings.json");
@@ -75,4 +76,15 @@ internal sealed class VideoSettings
     public bool NeuralRendering { get; set; }
     public int NeuralIntensity { get; set; } = 100;
     public bool NeuralTemporal { get; set; } = true;
+}
+
+/// <summary>Last capture device and mode the user picked.</summary>
+internal sealed class CaptureSettings
+{
+    public string VideoDevice { get; set; } = "";
+    public string AudioDevice { get; set; } = "";   // "" = no audio
+    public int Height { get; set; }                 // 0 = device default
+    public int Fps { get; set; }                    // 0 = device default
+
+    public int Width => Height switch { 720 => 1280, 1080 => 1920, 1440 => 2560, 2160 => 3840, _ => 0 };
 }

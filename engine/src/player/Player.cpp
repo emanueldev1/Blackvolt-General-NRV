@@ -73,6 +73,7 @@ void Player::open(const std::string& urlUtf8) {
     dropped_ = 0;
     clock_.reset(0.0);
     clock_.setPaused(false);
+    live_ = false;
     running_ = true;
 
     auto media = std::make_shared<OpenedMedia>();
@@ -120,9 +121,11 @@ void Player::open(const std::string& urlUtf8) {
             info_.hardwareDecode = media->video->hardware();
             info_.codec = media->video->codecName();
             info_.hasAudio = media->audio.has_value();
+            info_.live = d.live();
             info_.state = PlayerState::Playing;
         }
         audioEnded_ = !media->audio.has_value();
+        live_ = d.live();
         demuxLoop(*media->demuxer, media->audio.has_value());
     });
 
@@ -288,6 +291,31 @@ void Player::renderLoop() {
         }
         if (std::isnan(pending->pts)) pending->pts = clock_.now();
 
+        if (live_ && !clock_.paused()) {
+            // Capture device: lowest latency wins. Show each frame as it arrives and skip
+            // straight to the newest one if the presenter fell behind.
+            if (frames_.size() > 0) {
+                ++dropped_;
+                pending.reset();
+                continue;
+            }
+            const auto t0 = std::chrono::steady_clock::now();
+            presenter_.present(*pending->frame);
+            const auto t1 = std::chrono::steady_clock::now();
+            presentStats.record(std::chrono::duration<double, std::micro>(t1 - t0).count());
+            if (lastPresent.time_since_epoch().count() != 0)
+                frameStats.record(std::chrono::duration<double, std::micro>(t1 - lastPresent).count());
+            lastPresent = t1;
+            ++presented_;
+            needClockReset_ = true; // resume scheduling cleanly if the source stops being live
+            {
+                std::lock_guard lock(infoMutex_);
+                info_.position = pending->pts;
+            }
+            pending.reset();
+            continue;
+        }
+
         if (needClockReset_) {
             clock_.reset(pending->pts);
             needClockReset_ = false;
@@ -350,6 +378,7 @@ void Player::pause() {
 }
 
 void Player::seek(double seconds) {
+    if (live_) return; // nothing to seek in a capture device
     seconds = std::max(0.0, seconds);
     // Invalidate everything in flight first so blocked producers wake up immediately,
     // even while paused (the render thread is not consuming then).

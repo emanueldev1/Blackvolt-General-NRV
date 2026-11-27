@@ -27,6 +27,8 @@ public:
     [[nodiscard]] double durationSeconds() const;
     [[nodiscard]] double frameRate() const;
     [[nodiscard]] AVFormatContext* context() const { return fmt_.get(); }
+    // A capture device (see CaptureUrl.h): no duration, no seeking, frames must not queue up.
+    [[nodiscard]] bool live() const { return live_; }
 
     // 0 on success, AVERROR_EOF at end of input, another negative AVERROR on failure.
     int read(AVPacket* packet);
@@ -38,6 +40,7 @@ private:
     FormatCtxPtr fmt_;
     StreamInfo video_;
     StreamInfo audio_;
+    bool live_ = false;
 };
 
 } // namespace bv::media

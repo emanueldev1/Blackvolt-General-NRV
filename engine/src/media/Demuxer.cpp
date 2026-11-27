@@ -1,5 +1,16 @@
 #include "Demuxer.h"
 
+#include "CaptureUrl.h"
+
+#if __has_include(<libavdevice/avdevice.h>)
+extern "C" {
+#include <libavdevice/avdevice.h>
+}
+#define BV_HAS_AVDEVICE 1
+#endif
+
+#include <mutex>
+
 namespace bv::media {
 
 std::optional<Demuxer> Demuxer::open(const std::string& urlUtf8, std::string* error) {
@@ -10,14 +21,38 @@ std::optional<Demuxer> Demuxer::open(const std::string& urlUtf8, std::string* er
 
     AVFormatContext* raw = nullptr;
     AVDictionary* opts = nullptr;
-    av_dict_set(&opts, "probesize", "10000000", 0);
-    av_dict_set(&opts, "analyzeduration", "5000000", 0);
-    int err = avformat_open_input(&raw, urlUtf8.c_str(), nullptr, &opts);
+    const AVInputFormat* format = nullptr;
+    std::string target = urlUtf8;
+    const bool live = isCaptureUrl(urlUtf8);
+    if (live) {
+#if defined(BV_HAS_AVDEVICE)
+        static std::once_flag once;
+        std::call_once(once, [] { avdevice_register_all(); });
+        std::string parseError;
+        const auto capture = parseCaptureUrl(urlUtf8, &parseError);
+        if (!capture) return fail(parseError);
+        format = av_find_input_format(capture->inputFormat.c_str());
+        if (!format) return fail("esta compilación no incluye la entrada " + capture->inputFormat);
+        target = capture->target;
+        for (const auto& [k, v] : capture->options) av_dict_set(&opts, k.c_str(), v.c_str(), 0);
+        // Live: start as soon as the first frames arrive.
+        av_dict_set(&opts, "probesize", "500000", 0);
+        av_dict_set(&opts, "analyzeduration", "0", 0);
+        av_dict_set(&opts, "fflags", "nobuffer", 0);
+#else
+        return fail("esta compilación no incluye captura de dispositivos");
+#endif
+    } else {
+        av_dict_set(&opts, "probesize", "10000000", 0);
+        av_dict_set(&opts, "analyzeduration", "5000000", 0);
+    }
+    int err = avformat_open_input(&raw, target.c_str(), format, &opts);
     av_dict_free(&opts);
-    if (err < 0) return fail("no se pudo abrir: " + errorString(err));
+    if (err < 0) return fail((live ? "no se pudo abrir el dispositivo: " : "no se pudo abrir: ") + errorString(err));
 
     Demuxer d;
     d.fmt_.reset(raw);
+    d.live_ = live;
     if ((err = avformat_find_stream_info(raw, nullptr)) < 0) return fail("sin información de streams: " + errorString(err));
 
     const int v = av_find_best_stream(raw, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
@@ -56,6 +91,7 @@ int Demuxer::read(AVPacket* packet) {
 }
 
 bool Demuxer::seek(double seconds) {
+    if (live_) return false;
     const auto ts = static_cast<int64_t>(seconds * AV_TIME_BASE);
     return avformat_seek_file(fmt_.get(), -1, INT64_MIN, ts, ts, AVSEEK_FLAG_BACKWARD) >= 0;
 }

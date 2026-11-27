@@ -24,8 +24,12 @@ if(FFMPEG_FOUND)
 else()
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(BV_FF REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswresample libswscale)
+  pkg_check_modules(BV_FF_DEVICE QUIET IMPORTED_TARGET libavdevice)
   add_library(bv_ffmpeg INTERFACE)
   target_link_libraries(bv_ffmpeg INTERFACE PkgConfig::BV_FF)
+  if(BV_FF_DEVICE_FOUND)
+    target_link_libraries(bv_ffmpeg INTERFACE PkgConfig::BV_FF_DEVICE)
+  endif()
 endif()
 
 set(BV_ENGINE_SOURCES
@@ -37,6 +41,8 @@ set(BV_ENGINE_SOURCES
   src/core/Log.cpp
   src/core/TimerResolution.cpp
   src/media/AudioDecoder.cpp
+  src/media/CaptureDevices.cpp
+  src/media/CaptureUrl.cpp
   src/media/Demuxer.cpp
   src/media/VideoDecoder.cpp
   src/player/Player.cpp
@@ -77,7 +83,7 @@ endif()
 target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json bv_ffmpeg)
 
 if(WIN32)
-  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32 winmm iphlpapi ws2_32)
+  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32 winmm iphlpapi ws2_32 mfplat mf mfuuid)
 endif()
 
 if(BV_HAS_NGX)

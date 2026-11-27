@@ -30,6 +30,7 @@ struct PlayerSnapshot {
     double fps = 0.0;
     bool hardwareDecode = false;
     bool hasAudio = false;
+    bool live = false; // capture device: shown as it arrives, no seeking
     std::string codec;
     std::string error;
     uint64_t framesPresented = 0;
@@ -98,6 +99,7 @@ private:
     std::atomic<bool> videoEnded_{false};
     std::atomic<bool> audioEnded_{true};
     std::atomic<bool> needClockReset_{true};
+    std::atomic<bool> live_{false};
     std::atomic<uint64_t> presented_{0}, dropped_{0};
     std::atomic<float> volume_{1.0f};
 

@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 6u
+#define BV_API_VERSION 7u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -190,6 +190,7 @@ typedef struct bv_player_info {
     uint64_t frames_dropped;
     char codec[32];
     char error[256];
+    uint32_t live;                 /* 1 = capture device (no duration, no seeking) */
 } bv_player_info;
 
 /* The player renders into a composition swapchain; attach it to a SwapChainPanel. */
@@ -204,6 +205,22 @@ BV_API bv_result BV_CALL bv_player_pause(bv_player* player);
 BV_API bv_result BV_CALL bv_player_seek(bv_player* player, double seconds);
 BV_API bv_result BV_CALL bv_player_set_volume(bv_player* player, float volume); /* 0..2 */
 BV_API bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out);
+
+/* ------------------------------------------------------------------------------------------
+ * Capture devices (capture cards, webcams). Opened with bv_player_open() and a capture URL.
+ * ---------------------------------------------------------------------------------------- */
+typedef struct bv_capture_device {
+    uint32_t size;              /* = sizeof(bv_capture_device) */
+    uint32_t is_audio;
+    char name[128];             /* UTF-8 friendly name */
+    char id[256];               /* UTF-8 symbolic link / endpoint id */
+} bv_capture_device;
+
+/* Fills up to `capacity` entries; `count` receives the total. */
+BV_API bv_result BV_CALL bv_capture_devices(bv_capture_device* out, uint32_t capacity, uint32_t* count);
+/* Builds "capture:video=...[:audio=...][?size=WxH&fps=N]". width/height/fps 0 = device default. */
+BV_API bv_result BV_CALL bv_capture_url(const char* video, const char* audio, uint32_t width, uint32_t height,
+                                        uint32_t fps, char* out, uint32_t out_size);
 
 /* ---------------------------------------------------------------------------
  * PlayStation Remote Play (PS5 / PS4)

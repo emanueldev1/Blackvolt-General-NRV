@@ -2,6 +2,8 @@
 #include "blackvolt/bv_api.h"
 
 #include "audio/WasapiSink.h"
+#include "media/CaptureDevices.h"
+#include "media/CaptureUrl.h"
 #include "core/EngineHandle.h"
 #include "player/Player.h"
 #include "render/D3D12Presenter.h"
@@ -129,7 +131,37 @@ bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out) {
     i.frames_dropped = s.framesDropped;
     copyString(i.codec, s.codec);
     copyString(i.error, s.error);
+    i.live = s.live ? 1u : 0u;
     *out = i;
+    return BV_OK;
+}
+
+bv_result BV_CALL bv_capture_devices(bv_capture_device* out, uint32_t capacity, uint32_t* count) {
+    if (!count || (capacity && !out)) return BV_ERR_INVALID_ARGUMENT;
+    try {
+        const auto devices = bv::media::enumerateCaptureDevices();
+        *count = static_cast<uint32_t>(devices.size());
+        for (uint32_t i = 0; i < capacity && i < devices.size(); ++i) {
+            bv_capture_device d{};
+            d.size = sizeof(d);
+            d.is_audio = devices[i].audio ? 1u : 0u;
+            copyString(d.name, devices[i].name);
+            copyString(d.id, devices[i].id);
+            out[i] = d;
+        }
+        return BV_OK;
+    } catch (...) {
+        return BV_ERR_INTERNAL;
+    }
+}
+
+bv_result BV_CALL bv_capture_url(const char* video, const char* audio, uint32_t width, uint32_t height, uint32_t fps,
+                                 char* out, uint32_t out_size) {
+    if (!video || !*video || !out || out_size == 0) return BV_ERR_INVALID_ARGUMENT;
+    const auto url = bv::media::makeCaptureUrl(video, audio ? audio : "", static_cast<int>(width),
+                                               static_cast<int>(height), static_cast<int>(fps));
+    if (url.size() + 1 > out_size) return BV_ERR_INVALID_ARGUMENT;
+    std::memcpy(out, url.c_str(), url.size() + 1);
     return BV_OK;
 }
 

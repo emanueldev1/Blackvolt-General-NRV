@@ -6,7 +6,7 @@ namespace Blackvolt.App.Interop;
 internal static partial class NativeEngine
 {
     private const string Dll = "blackvolt_engine";
-    public const uint ApiVersion = 6;
+    public const uint ApiVersion = 7;
     public const uint BestAdapter = uint.MaxValue;
 
     public enum Result : int
@@ -145,6 +145,7 @@ internal static partial class NativeEngine
         public ulong FramesDropped;
         public fixed byte Codec[32];
         public fixed byte Error[256];
+        public uint Live;
 
         public readonly string CodecText { get { fixed (byte* p = Codec) return Utf8.Read(p, 32); } }
         public readonly string ErrorText { get { fixed (byte* p = Error) return Utf8.Read(p, 256); } }
