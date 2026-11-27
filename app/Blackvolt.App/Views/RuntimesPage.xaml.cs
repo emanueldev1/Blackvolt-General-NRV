@@ -31,6 +31,7 @@ public sealed partial class RuntimesPage : Page
         for (int i = 0; i < NativeEngine.FeatureCount; i++)
         {
             var feature = (Feature)i;
+            if (feature == Feature.DlssNeuralRendering) continue; // internal stage, not a user-facing runtime
             var name = Runtimes.DisplayName(feature);
             if (engine is null)
             {

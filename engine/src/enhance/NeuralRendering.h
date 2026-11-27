@@ -29,9 +29,7 @@ struct NeuralControls {
 //   * evaluate() records into the presenter's command list and must not wait on the CPU.
 //   * reset = true after a seek, a resolution change or a stream reconnect.
 //
-// No implementation ships today: NVIDIA has not published NR for third-party applications.
-// When it does, add a class implementing this interface that goes through the official
-// runtime (NgxRuntime, Blackvolt's own project ID) and return it from createNeuralRendering().
+// createNeuralRendering() returns the implementation in use, or nullptr with a reason.
 class NeuralRendering {
 public:
     virtual ~NeuralRendering() = default;

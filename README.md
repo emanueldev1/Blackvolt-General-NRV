@@ -69,7 +69,7 @@ Actualizaciones), lo descarga, comprueba el SHA-256 y se reinicia ya actualizada
 ## Principios
 
 1. **Todo en la GPU.** Los fotogramas no vuelven a la CPU entre decodificar, mejorar y mostrar.
-2. **Runtimes DLSS/NGX oficiales.** RTX VSR, TrueHDR y DLSS, cargados por la vía oficial de NGX y verificados por hash. Sin parches en memoria ni suplantar la GPU ni otras aplicaciones. DLSS NR queda preparado para cuando NVIDIA lo publique oficialmente.
+2. **Runtimes DLSS/NGX oficiales.** RTX VSR, TrueHDR y DLSS, cargados por la vía oficial de NGX y verificados por hash. Sin parches en memoria ni suplantar la GPU ni otras aplicaciones.
 3. **Motor y UI separados.** La app habla con el motor solo por la API en C.
 4. **Medir todo.** Cada etapa del pipeline reporta su tiempo; las estadísticas son parte del producto.
 

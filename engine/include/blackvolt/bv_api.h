@@ -373,8 +373,7 @@ typedef struct bv_enhance_settings {
     uint32_t hdr_saturation;    /* 0..200, 100 = neutral */
     uint32_t hdr_middle_gray;   /* 10..100 */
     uint32_t hdr_peak_nits;     /* 400..2000; 0 = the display's reported peak */
-    /* NVIDIA neural rendering (DLSS NR). Reserved for NVIDIA's official release to third-party apps:
-     * no implementation ships yet, so requesting it reports BV_ENHANCE_NEURAL_UNAVAILABLE. */
+    /* Neural rendering stage; reports BV_ENHANCE_NEURAL_UNAVAILABLE when there is none. */
     uint32_t neural;
     uint32_t neural_intensity;  /* 0..100 */
     uint32_t neural_temporal;   /* 1 = reuse the previous output */

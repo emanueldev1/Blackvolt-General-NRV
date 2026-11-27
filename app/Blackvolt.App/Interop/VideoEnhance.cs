@@ -82,8 +82,6 @@ internal static partial class NativeEnhance
     public static string Describe(in Status s)
     {
         var lines = new List<string>();
-        if (s.Flags.HasFlag(Flags.NeuralActive))
-            lines.Add($"DLSS NR    {s.GpuNeuralMs,7:0.00} ms");
         if (s.Flags.HasFlag(Flags.VsrActive))
             lines.Add($"RTX VSR    {s.InputWidth}×{s.InputHeight} → {s.OutputWidth}×{s.OutputHeight}  {s.GpuVsrMs:0.00} ms");
         if (s.Flags.HasFlag(Flags.HdrActive))
@@ -96,8 +94,6 @@ internal static partial class NativeEnhance
     /// <summary>Short human explanation of why a requested stage is not running, or null.</summary>
     public static string? Explain(in Status s, VideoSettings wanted)
     {
-        if (wanted.NeuralRendering && s.Flags.HasFlag(Flags.NeuralUnavailable))
-            return "DLSS NR: " + (s.NeuralNoteText is { Length: > 0 } note ? note : "no disponible.");
         if (wanted.SuperResolution && s.Flags.HasFlag(Flags.VsrUnavailable))
             return "Super Resolution no está disponible: necesita una GeForce RTX y un driver reciente.";
         if (wanted.TrueHdr && s.Flags.HasFlag(Flags.DisplaySdr))

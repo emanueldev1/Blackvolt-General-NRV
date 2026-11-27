@@ -25,7 +25,7 @@ internal static class Runtimes
         Feature.DlssSuperResolution => "DLSS Super Resolution",
         Feature.DlssRayReconstruction => "DLSS Ray Reconstruction",
         Feature.DlssFrameGeneration => "DLSS Frame Generation",
-        Feature.DlssNeuralRendering => "DLSS NR (Neural Rendering)",
+        Feature.DlssNeuralRendering => "Neural Rendering",
         Feature.RtxVideoSuperResolution => "RTX Video Super Resolution",
         Feature.RtxTrueHdr => "RTX Video TrueHDR",
         _ => f.ToString(),

@@ -9,12 +9,6 @@ Los paquetes de Release incluyen DLLs de NVIDIA (`nvngx_dlss.dll`, `nvngx_dlssd.
 `nvngx_dlssg.dll`) del [DLSS SDK](https://github.com/NVIDIA/DLSS) bajo la NVIDIA RTX SDKs License.
 Siguen siendo software propietario de NVIDIA. Blackvolt no está patrocinado ni respaldado por NVIDIA.
 
-## DLSS NR
-
-Blackvolt no incluye ni descarga ningún runtime de DLSS NR. El motor tiene preparada la etapa
-(`engine/src/enhance/NeuralRendering.h`) para cuando NVIDIA publique NR oficialmente para
-aplicaciones de terceros.
-
 ## Otros
 
 - nlohmann/json — MIT.

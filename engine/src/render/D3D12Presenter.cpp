@@ -462,7 +462,7 @@ struct D3D12Presenter::Impl {
             if (!hdrDisplay) status.flags |= EnhanceStatus::DisplaySdr;
         }
 
-        // Neural rendering at source size, first in the chain (no implementation ships yet).
+        // Neural rendering at source size, first in the chain.
         p.neural = settings.neural && !neuralUnavailable;
         if (p.neural && (!neural || neuralW != inW || neuralH != inH)) {
             waitIdle();
