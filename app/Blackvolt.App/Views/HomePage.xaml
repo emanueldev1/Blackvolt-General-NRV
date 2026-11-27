@@ -55,30 +55,36 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
-        <Border Style="{StaticResource BvCardStyle}">
+        <Button Tag="player" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
+          <Border Style="{StaticResource BvCardStyle}">
           <StackPanel Spacing="6">
             <SymbolIcon Symbol="Play" HorizontalAlignment="Left" />
             <TextBlock Text="Reproducir un video" Style="{StaticResource BodyStrongTextBlockStyle}" />
             <TextBlock Text="Súper resolución y HDR en archivos locales." TextWrapping="Wrap"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
           </StackPanel>
-        </Border>
-        <Border Grid.Column="1" Style="{StaticResource BvCardStyle}">
+          </Border>
+        </Button>
+        <Button Grid.Column="1" Tag="capture" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
+          <Border Style="{StaticResource BvCardStyle}">
           <StackPanel Spacing="6">
             <SymbolIcon Symbol="Video" HorizontalAlignment="Left" />
             <TextBlock Text="Capturadora" Style="{StaticResource BodyStrongTextBlockStyle}" />
             <TextBlock Text="Consola o cámara con latencia mínima." TextWrapping="Wrap"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
           </StackPanel>
-        </Border>
-        <Border Grid.Column="2" Style="{StaticResource BvCardStyle}">
+          </Border>
+        </Button>
+        <Button Grid.Column="2" Tag="export" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
+          <Border Style="{StaticResource BvCardStyle}">
           <StackPanel Spacing="6">
             <SymbolIcon Symbol="Save" HorizontalAlignment="Left" />
             <TextBlock Text="Exportar" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="Procesa y guarda con NVENC, en cola." TextWrapping="Wrap"
+            <TextBlock Text="Recodifica con NVENC, AMF o Media Foundation." TextWrapping="Wrap"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
           </StackPanel>
-        </Border>
+          </Border>
+        </Button>
       </Grid>
     </StackPanel>
   </ScrollViewer>

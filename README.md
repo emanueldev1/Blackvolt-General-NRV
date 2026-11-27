@@ -1,7 +1,8 @@
 # Blackvolt
 
-Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: súper resolución,
-HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y limpia.
+Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: súper resolución, HDR,
+PlayStation Remote Play, capturadoras, exportación por GPU y estadísticas detalladas, en una
+app rápida y limpia.
 
 > Estado: **0.1.0 en desarrollo.**
 
@@ -15,8 +16,12 @@ HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y 
   emparejar; las credenciales se guardan cifradas con DPAPI.
 - **RTX Video Super Resolution y TrueHDR** por la vía oficial de NGX, en el reproductor y en el
   stream, con vuelta automática a bilineal / SDR si la GPU o el driver no lo soportan.
+- **Capturadoras y cámaras** (DirectShow / Media Foundation) en modo en directo: cada fotograma se
+  muestra en cuanto llega, sin colchón, con VSR y TrueHDR disponibles igual que en el reproductor.
+- **Exportar**: recodifica a H.264, HEVC o AV1 con NVENC, AMF o Media Foundation (y software si no
+  hay GPU compatible), escalado Lanczos y audio copiado sin pérdidas.
 - **Estadísticas**: tiempos por etapa (decodificación, latencia, GPU por cada mejora), fotogramas
-  perdidos y recuperados, bitrate, RTT.
+  perdidos y recuperados, bitrate, RTT, y un **historial de sesiones** con su resumen.
 
 ## Qué hay en el repo
 

@@ -35,6 +35,14 @@ public sealed partial class MainWindow : Window
         Nav.IsPaneToggleButtonVisible = !on;
     }
 
+    /// <summary>Selects a section of the navigation pane by its tag, as if the user clicked it.</summary>
+    internal void Go(string tag)
+    {
+        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == tag);
+        if (item is not null) Nav.SelectedItem = item;
+        else if (Pages.TryGetValue(tag, out var page)) ContentFrame.Navigate(page);
+    }
+
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         var tag = args.IsSettingsSelected ? "settings" : (args.SelectedItemContainer?.Tag as string ?? "home");

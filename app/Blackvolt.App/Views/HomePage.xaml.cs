@@ -24,6 +24,11 @@ public sealed partial class HomePage : Page
         Show(App.Engine?.Adapter, App.EngineError);
     }
 
+    private void OnQuickAction(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string tag }) App.MainWindow?.Go(tag);
+    }
+
     private void Show(GpuAdapter? gpu, string? error)
     {
         if (gpu is null)
