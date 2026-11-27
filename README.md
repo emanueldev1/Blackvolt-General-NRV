@@ -1,7 +1,7 @@
 # Blackvolt
 
-Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: súper resolución, HDR,
-interpolación de fotogramas y estadísticas detalladas, en una app rápida y limpia.
+Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: DLSS NR, súper resolución,
+HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y limpia.
 
 > Estado: **0.1.0 en desarrollo.** La base del motor y la app ya funcionan; el pipeline de
 > video llega en las siguientes versiones (ver [ROADMAP](docs/ROADMAP.md)).
@@ -41,6 +41,6 @@ También puedes abrir `Blackvolt.sln` en Visual Studio después de compilar el m
 ## Principios
 
 1. **Todo en la GPU.** Los fotogramas no vuelven a la CPU entre decodificar, mejorar y mostrar.
-2. **Solo SDKs oficiales.** RTX Video SDK, Optical Flow SDK y Video Codec SDK de NVIDIA; nada de hacks de driver ni suplantar la GPU.
+2. **Runtimes DLSS/NGX.** DLSS NR, DLSS-G, RTX VSR y TrueHDR, incluidos en cada Release y verificados por hash. Sin parches en memoria ni suplantar la GPU.
 3. **Motor y UI separados.** La app habla con el motor solo por la API en C.
 4. **Medir todo.** Cada etapa del pipeline reporta su tiempo; las estadísticas son parte del producto.
