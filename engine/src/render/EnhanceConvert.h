@@ -4,6 +4,9 @@
 #include "blackvolt/bv_api.h"
 #include "render/D3D12Presenter.h"
 
+#include <algorithm>
+#include <cstring>
+
 namespace bv::render {
 
 inline EnhanceSettings fromApi(const bv_enhance_settings& in) {
@@ -15,6 +18,9 @@ inline EnhanceSettings fromApi(const bv_enhance_settings& in) {
     s.hdr.saturation = in.hdr_saturation;
     s.hdr.middleGray = in.hdr_middle_gray ? in.hdr_middle_gray : 50;
     s.hdr.peakNits = in.hdr_peak_nits;
+    s.neural = in.neural != 0;
+    s.neuralControls.intensity = static_cast<float>(std::min<uint32_t>(in.neural_intensity, 100)) / 100.0f;
+    s.neuralControls.temporal = in.neural_temporal != 0;
     return s;
 }
 
@@ -29,6 +35,10 @@ inline void toApi(const EnhanceStatus& in, bv_enhance_status& out) {
     out.gpu_vsr_ms = in.gpuVsrMs;
     out.gpu_hdr_ms = in.gpuHdrMs;
     out.gpu_total_ms = in.gpuTotalMs;
+    out.gpu_neural_ms = in.gpuNeuralMs;
+    const auto n = std::min(in.neuralNote.size(), sizeof(out.neural_note) - 1);
+    std::memcpy(out.neural_note, in.neuralNote.data(), n);
+    out.neural_note[n] = '\0';
 }
 
 } // namespace bv::render

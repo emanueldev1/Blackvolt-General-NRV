@@ -38,7 +38,7 @@ constexpr DXGI_FORMAT kHdrFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 constexpr DXGI_FORMAT kRgbaFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // what VSR and TrueHDR consume
 constexpr UINT kSrvPerPass = 3;
 constexpr UINT kSrvPerFrame = 2 * kSrvPerPass; // pass A (decode -> RGB) + final pass
-constexpr UINT kStamps = 5;                    // start, converted, vsr, hdr, end
+constexpr UINT kStamps = 6;                    // start, converted, neural, vsr, hdr, end
 constexpr double kSmoothing = 0.1;
 
 // Fullscreen triangle.
@@ -203,12 +203,19 @@ struct D3D12Presenter::Impl {
     std::unique_ptr<ngx::VideoSuperResolution> vsr;
     UINT vsrInW = 0, vsrInH = 0, vsrOutW = 0, vsrOutH = 0;
     std::unique_ptr<ngx::TrueHdr> trueHdr;
+    std::unique_ptr<enhance::NeuralRendering> neural;
+    bool neuralUnavailable = false;
+    std::string neuralNote;
+    ComPtr<ID3D12Resource> neuralOut;
+    UINT neuralW = 0, neuralH = 0;
+    int64_t lastPts = AV_NOPTS_VALUE;
 
     AVFrame* last = nullptr; // for redraw()
     mutable std::mutex mutex;
 
     ~Impl() {
         waitIdle();
+        neural.reset();
         vsr.reset();
         trueHdr.reset();
         for (auto*& f : inFlight) av_frame_free(&f);
@@ -425,7 +432,7 @@ struct D3D12Presenter::Impl {
     // Decides what runs for this frame and makes sure the features and textures exist.
     // Called before a back buffer is acquired, because it may recreate the swapchain.
     struct Plan {
-        bool enhanced = false, vsr = false, hdr = false;
+        bool enhanced = false, neural = false, vsr = false, hdr = false;
         UINT outW = 0, outH = 0;
         Viewport vp{};
     };
@@ -454,6 +461,28 @@ struct D3D12Presenter::Impl {
             status.displayPeakNits = hdrPeak;
             if (!hdrDisplay) status.flags |= EnhanceStatus::DisplaySdr;
         }
+
+        // Neural rendering at source size, first in the chain (no implementation ships yet).
+        p.neural = settings.neural && !neuralUnavailable;
+        if (p.neural && (!neural || neuralW != inW || neuralH != inH)) {
+            waitIdle();
+            neural.reset();
+            neuralNote.clear();
+            neural = runSetup([&](ID3D12GraphicsCommandList* cl) {
+                return enhance::createNeuralRendering(ngx, cl, inW, inH, &neuralNote);
+            });
+            if (!neural) {
+                neuralUnavailable = true;
+                p.neural = false;
+                log::info("neural rendering not available: {}", neuralNote);
+            }
+        }
+        if (p.neural && !ensureTexture(neuralOut, neuralW, neuralH, inW, inH, kRgbaFormat,
+                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
+            p.neural = false;
+        }
+        if (settings.neural && neuralUnavailable) status.flags |= EnhanceStatus::NeuralUnavailable;
+        status.neuralNote = settings.neural && neuralUnavailable ? neuralNote : std::string();
 
         p.vsr = settings.vsr && ngx && !vsrUnavailable;
         if (p.vsr && (p.outW < inW || p.outH < inH || p.outW > 4 * inW || p.outH > 4 * inH)) {
@@ -489,10 +518,10 @@ struct D3D12Presenter::Impl {
         if (settings.vsr && vsrUnavailable) status.flags |= EnhanceStatus::VsrUnavailable;
         if (settings.trueHdr && hdrUnavailable) status.flags |= EnhanceStatus::HdrUnavailable;
 
-        p.enhanced = p.vsr || p.hdr;
+        p.enhanced = p.neural || p.vsr || p.hdr;
         if (p.enhanced) {
             if (!ensureTexture(srcRgb, srcW, srcH, inW, inH, kRgbaFormat, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, kShaderRead)) {
-                p.enhanced = p.vsr = p.hdr = false;
+                p.enhanced = p.neural = p.vsr = p.hdr = false;
             } else {
                 D3D12_CPU_DESCRIPTOR_HANDLE rtv{rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + kBackBuffers * rtvSize};
                 device->CreateRenderTargetView(srcRgb.Get(), nullptr, rtv);
@@ -507,9 +536,10 @@ struct D3D12Presenter::Impl {
                                     D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
             p.hdr = false;
         }
-        p.enhanced = p.vsr || p.hdr;
+        p.enhanced = p.neural || p.vsr || p.hdr;
 
         rebuildSwapchain(width, height, p.hdr ? kHdrFormat : kSdrFormat);
+        if (p.neural) status.flags |= EnhanceStatus::NeuralActive;
         if (p.vsr) status.flags |= EnhanceStatus::VsrActive;
         if (p.hdr) status.flags |= EnhanceStatus::HdrActive;
         status.outputWidth = p.enhanced ? (p.vsr ? p.outW : inW) : p.outW;
@@ -589,10 +619,11 @@ struct D3D12Presenter::Impl {
         if (FAILED(queryReadback->Map(0, &range, reinterpret_cast<void**>(&data)))) return;
         const UINT64* t = data + bb * kStamps;
         const auto ms = [&](UINT a, UINT b) { return t[b] > t[a] ? static_cast<double>(t[b] - t[a]) * tickMs : 0.0; };
-        const double convert = ms(0, 1), vsrMs = ms(1, 2), hdrMs = ms(2, 3), total = ms(0, 4);
+        const double convert = ms(0, 1), neuralMs = ms(1, 2), vsrMs = ms(2, 3), hdrMs = ms(3, 4), total = ms(0, 5);
         const D3D12_RANGE none{0, 0};
         queryReadback->Unmap(0, &none);
         smooth(status.gpuConvertMs, convert);
+        smooth(status.gpuNeuralMs, neuralMs);
         smooth(status.gpuVsrMs, vsrMs);
         smooth(status.gpuHdrMs, hdrMs);
         smooth(status.gpuTotalMs, total);
@@ -699,6 +730,7 @@ struct D3D12Presenter::Impl {
         Params finalParams = p;
         D3D12_GPU_DESCRIPTOR_HANDLE finalSrv = passAGpu;
 
+        bool neuralOk = false;
         if (plan.enhanced) {
             // Pass A: decode surface -> RGBA8 at source size.
             const auto toRt = transition(srcRgb.Get(), kShaderRead, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -715,8 +747,26 @@ struct D3D12Presenter::Impl {
             DXGI_FORMAT currentFormat = kRgbaFormat;
             UINT curW = srcW, curH = srcH;
 
+            if (plan.neural) {
+                // History is meaningless across a seek, a cut in the timeline or a new size.
+                const bool jump = frame.pts == AV_NOPTS_VALUE || lastPts == AV_NOPTS_VALUE || frame.pts <= lastPts;
+                if (neural->evaluate(list.Get(), srcRgb.Get(), neuralOut.Get(), srcW, srcH, settings.neuralControls, jump)) {
+                    D3D12_RESOURCE_BARRIER b[2] = {uavBarrier(neuralOut.Get()),
+                                                   transition(neuralOut.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kShaderRead)};
+                    list->ResourceBarrier(2, b);
+                    current = neuralOut.Get();
+                    neuralOk = true;
+                } else {
+                    neuralUnavailable = true;
+                    status.flags &= ~EnhanceStatus::NeuralActive;
+                    status.flags |= EnhanceStatus::NeuralUnavailable;
+                }
+            }
+            lastPts = frame.pts;
+            stamp(bb, 2);
+
             if (plan.vsr) {
-                if (vsr->evaluate(list.Get(), srcRgb.Get(), srcW, srcH, vsrOut.Get(), vsrW, vsrH, settings.vsrQuality)) {
+                if (vsr->evaluate(list.Get(), current, srcW, srcH, vsrOut.Get(), vsrW, vsrH, settings.vsrQuality)) {
                     D3D12_RESOURCE_BARRIER b[2] = {uavBarrier(vsrOut.Get()),
                                                    transition(vsrOut.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kShaderRead)};
                     list->ResourceBarrier(2, b);
@@ -729,7 +779,7 @@ struct D3D12Presenter::Impl {
                     status.flags |= EnhanceStatus::VsrUnavailable;
                 }
             }
-            stamp(bb, 2);
+            stamp(bb, 3);
 
             if (plan.hdr) {
                 const auto params = hdrParams();
@@ -747,7 +797,7 @@ struct D3D12Presenter::Impl {
                     status.flags |= EnhanceStatus::HdrUnavailable;
                 }
             }
-            stamp(bb, 3);
+            stamp(bb, 4);
 
             bindRgb(finalCpu, current, currentFormat);
             finalSrv = finalGpu;
@@ -765,9 +815,7 @@ struct D3D12Presenter::Impl {
                 }
             }
         } else {
-            stamp(bb, 1);
-            stamp(bb, 2);
-            stamp(bb, 3);
+            for (UINT i = 1; i <= 4; ++i) stamp(bb, i);
         }
 
         // Final pass into the back buffer.
@@ -786,8 +834,9 @@ struct D3D12Presenter::Impl {
             after.push_back(transition(vsrOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
         if (plan.hdr && hdrOk)
             after.push_back(transition(hdrOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+        if (neuralOk) after.push_back(transition(neuralOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
         list->ResourceBarrier(static_cast<UINT>(after.size()), after.data());
-        stamp(bb, 4);
+        stamp(bb, 5);
         if (queryHeap) {
             list->ResolveQueryData(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, bb * kStamps, kStamps, queryReadback.Get(),
                                    bb * kStamps * sizeof(UINT64));
@@ -876,6 +925,7 @@ void D3D12Presenter::setEnhance(const EnhanceSettings& settings) {
         if (impl_->settings == settings) return;
         // A fresh request gets a fresh attempt (e.g. after a driver update or turning HDR on).
         if (settings.vsr != impl_->settings.vsr) impl_->vsrUnavailable = false;
+        if (settings.neural != impl_->settings.neural) impl_->neuralUnavailable = false;
         if (settings.trueHdr != impl_->settings.trueHdr) {
             impl_->hdrUnavailable = false;
             impl_->hdrDisplay = displayHdrInfo(&impl_->hdrPeak);
@@ -883,6 +933,7 @@ void D3D12Presenter::setEnhance(const EnhanceSettings& settings) {
         impl_->settings = settings;
         impl_->settings.vsrQuality = std::clamp<uint32_t>(settings.vsrQuality, 1, 4);
         if (!settings.vsr) impl_->status.gpuVsrMs = 0;
+        if (!settings.neural) impl_->status.gpuNeuralMs = 0;
         if (!settings.trueHdr) impl_->status.gpuHdrMs = 0;
     }
     redraw();

@@ -15,7 +15,12 @@ internal sealed class EnhancePanel : StackPanel
         [("Rápida", 1), ("Equilibrada", 2), ("Alta", 3), ("Máxima", 4)];
 
     private readonly VideoSettings _settings = AppSettings.Current.Video;
-    private readonly ToggleSwitch _vsr, _hdr;
+    // Flip when an official DLSS NR implementation ships in the engine (enhance/NeuralRendering.h).
+    private const bool NeuralShipped = false;
+
+    private readonly ToggleSwitch _vsr, _hdr, _neural;
+    private readonly Slider _neuralIntensity;
+    private readonly StackPanel _neuralOptions;
     private readonly ComboBox _quality;
     private readonly Slider _peak, _contrast, _saturation, _middleGray;
     private readonly TextBlock _peakValue, _note;
@@ -33,6 +38,23 @@ internal sealed class EnhancePanel : StackPanel
         var title = new TextBlock { Text = "Mejora de video", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
         if (Resource<Style>("BodyStrongTextBlockStyle") is { } strong) title.Style = strong;
         Children.Add(title);
+
+        _neural = new ToggleSwitch
+        {
+            Header = "DLSS NR",
+            OnContent = "Activado",
+            OffContent = NeuralShipped ? "Desactivado" : "Próximamente",
+            IsEnabled = NeuralShipped,
+        };
+        Children.Add(_neural);
+        Children.Add(Hint(NeuralShipped
+            ? "Reconstrucción neuronal de NVIDIA sobre cada fotograma."
+            : "Preparado para cuando NVIDIA publique DLSS NR oficial para aplicaciones de terceros."));
+        _neuralOptions = new StackPanel { Spacing = 4, Visibility = NeuralShipped ? Visibility.Visible : Visibility.Collapsed };
+        _neuralIntensity = AddSlider(_neuralOptions, "Intensidad", 0, 100, 1);
+        Children.Add(_neuralOptions);
+
+        Children.Add(new MenuFlyoutSeparator { Margin = new Thickness(0, 4, 0, 4) });
 
         _vsr = new ToggleSwitch { Header = "RTX Video Super Resolution", OnContent = "Activado", OffContent = "Desactivado" };
         Children.Add(_vsr);
@@ -73,6 +95,8 @@ internal sealed class EnhancePanel : StackPanel
 
         Load();
         _vsr.Toggled += (_, _) => Commit();
+        _neural.Toggled += (_, _) => Commit();
+        _neuralIntensity.ValueChanged += OnSlider;
         _hdr.Toggled += (_, _) => Commit();
         _quality.SelectionChanged += (_, _) => Commit();
         foreach (var s in new[] { _peak, _contrast, _saturation, _middleGray }) s.ValueChanged += OnSlider;
@@ -92,6 +116,8 @@ internal sealed class EnhancePanel : StackPanel
     private void Load()
     {
         _loading = true;
+        _neural.IsOn = NeuralShipped && _settings.NeuralRendering;
+        _neuralIntensity.Value = _settings.NeuralIntensity;
         _vsr.IsOn = _settings.SuperResolution;
         _quality.SelectedIndex = Array.FindIndex(Qualities, q => q.Value == _settings.SuperResolutionQuality) is var i and >= 0 ? i : 3;
         _hdr.IsOn = _settings.TrueHdr;
@@ -115,6 +141,7 @@ internal sealed class EnhancePanel : StackPanel
         var peak = (int)_peak.Value;
         _peakValue.Text = peak < 400 ? "Auto" : $"{peak} nits";
         _quality.IsEnabled = _vsr.IsOn;
+        _neuralIntensity.IsEnabled = _neural.IsOn;
         _hdrOptions.Opacity = _hdr.IsOn ? 1.0 : 0.45;
         _hdrOptions.IsHitTestVisible = _hdr.IsOn;
     }
@@ -122,6 +149,8 @@ internal sealed class EnhancePanel : StackPanel
     private void Commit()
     {
         if (_loading) return;
+        _settings.NeuralRendering = NeuralShipped && _neural.IsOn;
+        _settings.NeuralIntensity = (int)_neuralIntensity.Value;
         _settings.SuperResolution = _vsr.IsOn;
         _settings.SuperResolutionQuality = Qualities[Math.Max(0, _quality.SelectedIndex)].Value;
         _settings.TrueHdr = _hdr.IsOn;

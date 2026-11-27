@@ -19,6 +19,8 @@ internal static partial class NativeEnhance
         HdrUnavailable = 1u << 3,
         DisplaySdr = 1u << 4,
         VsrBypassed = 1u << 5,
+        NeuralActive = 1u << 6,
+        NeuralUnavailable = 1u << 7,
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -27,16 +29,21 @@ internal static partial class NativeEnhance
         public uint Size;
         public uint Vsr, VsrQuality, TrueHdr;
         public uint HdrContrast, HdrSaturation, HdrMiddleGray, HdrPeakNits;
+        public uint Neural, NeuralIntensity, NeuralTemporal;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct Status
+    public unsafe struct Status
     {
         public uint Size;
         public Flags Flags;
         public uint InputWidth, InputHeight, OutputWidth, OutputHeight;
         public float DisplayPeakNits;
         public float GpuConvertMs, GpuVsrMs, GpuHdrMs, GpuTotalMs;
+        public float GpuNeuralMs;
+        public fixed byte NeuralNote[160];
+
+        public readonly string NeuralNoteText { get { fixed (byte* p = NeuralNote) return Utf8.Read(p, 160); } }
     }
 
     [LibraryImport(Dll, EntryPoint = "bv_player_set_enhance")]
@@ -64,6 +71,9 @@ internal static partial class NativeEnhance
         HdrSaturation = (uint)Math.Clamp(s.HdrSaturation, 0, 200),
         HdrMiddleGray = (uint)Math.Clamp(s.HdrMiddleGray, 10, 100),
         HdrPeakNits = s.HdrPeakNits <= 0 ? 0u : (uint)Math.Clamp(s.HdrPeakNits, 400, 2000),
+        Neural = s.NeuralRendering ? 1u : 0u,
+        NeuralIntensity = (uint)Math.Clamp(s.NeuralIntensity, 0, 100),
+        NeuralTemporal = s.NeuralTemporal ? 1u : 0u,
     };
 
     public static Status NewStatus() => new() { Size = (uint)Marshal.SizeOf<Status>() };
@@ -72,6 +82,8 @@ internal static partial class NativeEnhance
     public static string Describe(in Status s)
     {
         var lines = new List<string>();
+        if (s.Flags.HasFlag(Flags.NeuralActive))
+            lines.Add($"DLSS NR    {s.GpuNeuralMs,7:0.00} ms");
         if (s.Flags.HasFlag(Flags.VsrActive))
             lines.Add($"RTX VSR    {s.InputWidth}×{s.InputHeight} → {s.OutputWidth}×{s.OutputHeight}  {s.GpuVsrMs:0.00} ms");
         if (s.Flags.HasFlag(Flags.HdrActive))
@@ -84,6 +96,8 @@ internal static partial class NativeEnhance
     /// <summary>Short human explanation of why a requested stage is not running, or null.</summary>
     public static string? Explain(in Status s, VideoSettings wanted)
     {
+        if (wanted.NeuralRendering && s.Flags.HasFlag(Flags.NeuralUnavailable))
+            return "DLSS NR: " + (s.NeuralNoteText is { Length: > 0 } note ? note : "no disponible.");
         if (wanted.SuperResolution && s.Flags.HasFlag(Flags.VsrUnavailable))
             return "Super Resolution no está disponible: necesita una GeForce RTX y un driver reciente.";
         if (wanted.TrueHdr && s.Flags.HasFlag(Flags.DisplaySdr))

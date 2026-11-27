@@ -5,7 +5,8 @@ add_executable(blackvolt_engine_tests
   test_api.cpp
   test_runtime.cpp
   test_player.cpp
-  test_remote_import.cpp)
+  test_remote_import.cpp
+  test_enhance.cpp)
 if(BV_ENABLE_REMOTEPLAY)
   target_sources(blackvolt_engine_tests PRIVATE test_remote_session.cpp)
 endif()

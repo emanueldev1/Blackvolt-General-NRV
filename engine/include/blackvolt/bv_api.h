@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 5u
+#define BV_API_VERSION 6u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -356,6 +356,11 @@ typedef struct bv_enhance_settings {
     uint32_t hdr_saturation;    /* 0..200, 100 = neutral */
     uint32_t hdr_middle_gray;   /* 10..100 */
     uint32_t hdr_peak_nits;     /* 400..2000; 0 = the display's reported peak */
+    /* NVIDIA neural rendering (DLSS NR). Reserved for NVIDIA's official release to third-party apps:
+     * no implementation ships yet, so requesting it reports BV_ENHANCE_NEURAL_UNAVAILABLE. */
+    uint32_t neural;
+    uint32_t neural_intensity;  /* 0..100 */
+    uint32_t neural_temporal;   /* 1 = reuse the previous output */
 } bv_enhance_settings;
 
 typedef enum bv_enhance_flags {
@@ -364,7 +369,9 @@ typedef enum bv_enhance_flags {
     BV_ENHANCE_VSR_UNAVAILABLE = 1u << 2, /* requested, but the GPU/driver/runtime refused */
     BV_ENHANCE_HDR_UNAVAILABLE = 1u << 3,
     BV_ENHANCE_DISPLAY_SDR = 1u << 4,     /* TrueHDR requested but Windows HDR is off */
-    BV_ENHANCE_VSR_BYPASSED = 1u << 5     /* picture shown smaller than decoded: nothing to upscale */
+    BV_ENHANCE_VSR_BYPASSED = 1u << 5,    /* picture shown smaller than decoded: nothing to upscale */
+    BV_ENHANCE_NEURAL_ACTIVE = 1u << 6,
+    BV_ENHANCE_NEURAL_UNAVAILABLE = 1u << 7
 } bv_enhance_flags;
 
 typedef struct bv_enhance_status {
@@ -375,6 +382,8 @@ typedef struct bv_enhance_status {
     float display_peak_nits;
     /* Smoothed GPU time per stage, measured with timestamp queries. */
     float gpu_convert_ms, gpu_vsr_ms, gpu_hdr_ms, gpu_total_ms;
+    float gpu_neural_ms;
+    char neural_note[160];      /* UTF-8: why neural rendering is not running, when requested */
 } bv_enhance_status;
 
 BV_API bv_result BV_CALL bv_player_set_enhance(bv_player* player, const bv_enhance_settings* settings);

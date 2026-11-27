@@ -71,4 +71,8 @@ internal sealed class VideoSettings
     public int HdrContrast { get; set; } = 100;
     public int HdrSaturation { get; set; } = 100;
     public int HdrMiddleGray { get; set; } = 50;
+    // Reserved for NVIDIA's official DLSS NR (no implementation ships yet).
+    public bool NeuralRendering { get; set; }
+    public int NeuralIntensity { get; set; } = 100;
+    public bool NeuralTemporal { get; set; } = true;
 }
