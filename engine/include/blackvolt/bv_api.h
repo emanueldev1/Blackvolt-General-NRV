@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 4u
+#define BV_API_VERSION 5u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -341,6 +341,48 @@ BV_API bv_result BV_CALL bv_stream_set_volume(bv_stream* stream, float volume); 
 BV_API bv_result BV_CALL bv_stream_set_input(bv_stream* stream, const bv_gamepad_state* state);
 BV_API bv_result BV_CALL bv_stream_ps_button(bv_stream* stream);
 BV_API bv_result BV_CALL bv_stream_console_sleep(bv_stream* stream);
+/* Ask the console for a keyframe (clears artifacts after packet loss). */
+BV_API bv_result BV_CALL bv_stream_request_keyframe(bv_stream* stream);
+
+/* ------------------------------------------------------------------------------------------
+ * Video enhancement (player and Remote Play stream share the same presenter)
+ * ---------------------------------------------------------------------------------------- */
+typedef struct bv_enhance_settings {
+    uint32_t size;              /* = sizeof(bv_enhance_settings) */
+    uint32_t vsr;               /* 1 = RTX Video Super Resolution to the on-screen size */
+    uint32_t vsr_quality;       /* 1 (fastest) .. 4 (best) */
+    uint32_t true_hdr;          /* 1 = RTX Video TrueHDR (SDR -> HDR, needs Windows HDR on) */
+    uint32_t hdr_contrast;      /* 0..200, 100 = neutral */
+    uint32_t hdr_saturation;    /* 0..200, 100 = neutral */
+    uint32_t hdr_middle_gray;   /* 10..100 */
+    uint32_t hdr_peak_nits;     /* 400..2000; 0 = the display's reported peak */
+} bv_enhance_settings;
+
+typedef enum bv_enhance_flags {
+    BV_ENHANCE_VSR_ACTIVE = 1u << 0,
+    BV_ENHANCE_HDR_ACTIVE = 1u << 1,
+    BV_ENHANCE_VSR_UNAVAILABLE = 1u << 2, /* requested, but the GPU/driver/runtime refused */
+    BV_ENHANCE_HDR_UNAVAILABLE = 1u << 3,
+    BV_ENHANCE_DISPLAY_SDR = 1u << 4,     /* TrueHDR requested but Windows HDR is off */
+    BV_ENHANCE_VSR_BYPASSED = 1u << 5     /* picture shown smaller than decoded: nothing to upscale */
+} bv_enhance_flags;
+
+typedef struct bv_enhance_status {
+    uint32_t size;              /* = sizeof(bv_enhance_status) */
+    uint32_t flags;             /* bv_enhance_flags */
+    uint32_t input_width, input_height;
+    uint32_t output_width, output_height;
+    float display_peak_nits;
+    /* Smoothed GPU time per stage, measured with timestamp queries. */
+    float gpu_convert_ms, gpu_vsr_ms, gpu_hdr_ms, gpu_total_ms;
+} bv_enhance_status;
+
+BV_API bv_result BV_CALL bv_player_set_enhance(bv_player* player, const bv_enhance_settings* settings);
+BV_API bv_result BV_CALL bv_player_enhance_status(bv_player* player, bv_enhance_status* out);
+BV_API bv_result BV_CALL bv_stream_set_enhance(bv_stream* stream, const bv_enhance_settings* settings);
+BV_API bv_result BV_CALL bv_stream_enhance_status(bv_stream* stream, bv_enhance_status* out);
+/* 1 when any display is in HDR mode; peak_nits receives the highest reported peak (may be NULL). */
+BV_API uint32_t BV_CALL bv_display_hdr(float* peak_nits);
 
 #ifdef __cplusplus
 }

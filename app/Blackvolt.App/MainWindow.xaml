@@ -31,6 +31,11 @@
       <NavigationView.MenuItems>
         <NavigationViewItem Content="Inicio" Tag="home" Icon="Home" IsSelected="True" />
         <NavigationViewItem Content="Reproductor" Tag="player" Icon="Play" />
+        <NavigationViewItem Content="PlayStation" Tag="remote">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE7FC;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
         <NavigationViewItem Content="Captura" Tag="capture" Icon="Video" />
         <NavigationViewItem Content="Exportar" Tag="export" Icon="Save" />
         <NavigationViewItem Content="Runtimes NVIDIA" Tag="runtimes">

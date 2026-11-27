@@ -19,8 +19,9 @@ jobs:
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg-cache" | Out-Null
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
           key: vcpkg-${{ hashFiles('vcpkg.json') }}
@@ -37,6 +38,13 @@ jobs:
       - name: Configure engine
         run: cmake --preset windows-x64
         timeout-minutes: 90
+
+      - name: Save vcpkg packages
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
 
       - name: Build engine
         run: cmake --build --preset debug

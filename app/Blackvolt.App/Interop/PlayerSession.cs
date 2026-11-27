@@ -27,6 +27,19 @@ internal sealed class PlayerSession : IDisposable
     public void Resize(uint width, uint height, float scaleX, float scaleY) =>
         NativeEngine.PlayerResize(_handle, width, height, scaleX, scaleY);
 
+    public void SetEnhance(Services.VideoSettings settings) =>
+        NativeEnhance.PlayerSetEnhance(_handle, NativeEnhance.From(settings));
+
+    public NativeEnhance.Status EnhanceStatus
+    {
+        get
+        {
+            var status = NativeEnhance.NewStatus();
+            NativeEnhance.PlayerEnhanceStatus(_handle, ref status);
+            return status;
+        }
+    }
+
     public NativeEngine.PlayerInfo Info
     {
         get

@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.RemotePlayPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Blackvolt.App.Views">
+  <ScrollViewer>
+    <StackPanel Padding="36,28" Spacing="22" MaxWidth="1180" HorizontalAlignment="Left">
+
+      <!-- Header -->
+      <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Spacing="4">
+          <TextBlock Text="PlayStation" Style="{StaticResource TitleLargeTextBlockStyle}" />
+          <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="720"
+                     Text="Juega en tu PS5 o PS4 desde este PC. Las consolas que ya emparejaste en chiaki-ng o Veyra aparecen aquí sin volver a emparejar." />
+        </StackPanel>
+        <DropDownButton Grid.Column="1" VerticalAlignment="Bottom">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <FontIcon Glyph="&#xE8B5;" FontSize="14" />
+            <TextBlock Text="Importar" />
+          </StackPanel>
+          <DropDownButton.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <MenuFlyoutItem Text="Desde chiaki-ng y Veyra en este PC" Click="OnImportInstalled">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;" /></MenuFlyoutItem.Icon>
+              </MenuFlyoutItem>
+              <MenuFlyoutItem Text="Archivo exportado de chiaki-ng (.ini)…" Click="OnImportIni">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;" /></MenuFlyoutItem.Icon>
+              </MenuFlyoutItem>
+              <MenuFlyoutItem Text="Carpeta de emparejamientos de Veyra…" Click="OnImportFolder">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE838;" /></MenuFlyoutItem.Icon>
+              </MenuFlyoutItem>
+            </MenuFlyout>
+          </DropDownButton.Flyout>
+        </DropDownButton>
+        <Button Grid.Column="2" VerticalAlignment="Bottom" Click="OnPairManual" Style="{StaticResource AccentButtonStyle}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <FontIcon Glyph="&#xE710;" FontSize="14" />
+            <TextBlock Text="Emparejar consola" />
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <InfoBar x:Name="Notice" IsOpen="False" />
+
+      <!-- Paired consoles -->
+      <StackPanel Spacing="10">
+        <TextBlock Text="Tus consolas" Style="{StaticResource SubtitleTextBlockStyle}" />
+        <Border x:Name="EmptyConsoles" Style="{StaticResource BvCardStyle}" Visibility="Collapsed" Padding="24">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Todavía no hay consolas" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="Enciende tu consola en la misma red y aparecerá abajo para emparejarla. Si ya la usabas con chiaki-ng o Veyra, pulsa Importar." />
+          </StackPanel>
+        </Border>
+        <GridView x:Name="ConsoleGrid" SelectionMode="None" IsItemClickEnabled="False" Padding="0">
+          <GridView.ItemContainerStyle>
+            <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+              <Setter Property="Margin" Value="0,0,14,14" />
+            </Style>
+          </GridView.ItemContainerStyle>
+          <GridView.ItemTemplate>
+            <DataTemplate x:DataType="local:ConsoleRow">
+              <Border Style="{StaticResource BvCardStyle}" Width="350" Padding="20,18">
+                <Grid RowSpacing="12">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource BvVoltDimBrush}" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                      <TextBlock Text="{x:Bind KindText}" FontWeight="SemiBold" FontSize="12"
+                                 Foreground="{StaticResource BvVoltBrush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <Ellipse Width="8" Height="8" Fill="{x:Bind StatusBrush}" VerticalAlignment="Center" />
+                      <TextBlock Text="{x:Bind StatusText}" Style="{StaticResource CaptionTextBlockStyle}"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Background="Transparent" BorderThickness="0" Padding="6"
+                            ToolTipService.ToolTip="Más opciones">
+                      <FontIcon Glyph="&#xE712;" FontSize="14" />
+                      <Button.Flyout>
+                        <MenuFlyout>
+                          <MenuFlyoutItem Text="Cambiar nombre o dirección…" Tag="{x:Bind Index}" Click="OnEditConsole">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70F;" /></MenuFlyoutItem.Icon>
+                          </MenuFlyoutItem>
+                          <MenuFlyoutItem Text="Despertar" Tag="{x:Bind Index}" Click="OnWakeConsole">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E8;" /></MenuFlyoutItem.Icon>
+                          </MenuFlyoutItem>
+                          <MenuFlyoutSeparator />
+                          <MenuFlyoutItem Text="Olvidar esta consola" Tag="{x:Bind Index}" Click="OnRemoveConsole">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon>
+                          </MenuFlyoutItem>
+                        </MenuFlyout>
+                      </Button.Flyout>
+                    </Button>
+                  </Grid>
+                  <StackPanel Grid.Row="1" Spacing="2">
+                    <TextBlock Text="{x:Bind Nickname}" Style="{StaticResource SubtitleTextBlockStyle}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind RunningApp}" Visibility="{x:Bind RunningVisibility}"
+                               Style="{StaticResource CaptionTextBlockStyle}" Foreground="{StaticResource BvVoltBrush}"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                    <Button Tag="{x:Bind Index}" Click="OnPlay" Style="{StaticResource AccentButtonStyle}" MinWidth="110">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE7FC;" FontSize="14" />
+                        <TextBlock Text="Jugar" />
+                      </StackPanel>
+                    </Button>
+                    <Button Tag="{x:Bind Index}" Click="OnWakeConsole" Visibility="{x:Bind WakeVisibility}">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE7E8;" FontSize="14" />
+                        <TextBlock Text="Despertar" />
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </GridView.ItemTemplate>
+        </GridView>
+      </StackPanel>
+
+      <!-- Consoles on the network that are not paired yet -->
+      <StackPanel Spacing="10">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="En la red" Style="{StaticResource SubtitleTextBlockStyle}" />
+          <ProgressRing IsActive="True" Width="16" Height="16" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock x:Name="NetworkEmpty" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                   Text="Buscando consolas… Deben estar encendidas o en reposo con Remote Play activado." />
+        <ItemsControl x:Name="NetworkList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:NetworkRow">
+              <Border Style="{StaticResource BvCardStyle}" Margin="0,0,0,8" Padding="18,12">
+                <Grid ColumnSpacing="16">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Border Background="{StaticResource BvVoltDimBrush}" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind KindText}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource BvVoltBrush}" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  </StackPanel>
+                  <Button Grid.Column="2" Content="Emparejar" Tag="{x:Bind Host}" Click="OnPairDiscovered" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- Stream quality -->
+      <StackPanel Spacing="10">
+        <TextBlock Text="Calidad del streaming" Style="{StaticResource SubtitleTextBlockStyle}" />
+        <Border Style="{StaticResource BvCardStyle}">
+          <Grid ColumnSpacing="28" RowSpacing="18">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ComboBox x:Name="ResolutionBox" Header="Resolución" HorizontalAlignment="Stretch" SelectionChanged="OnQualityChanged">
+              <ComboBoxItem Content="1080p" Tag="1080" />
+              <ComboBoxItem Content="720p" Tag="720" />
+              <ComboBoxItem Content="540p" Tag="540" />
+              <ComboBoxItem Content="360p" Tag="360" />
+            </ComboBox>
+            <ComboBox x:Name="FpsBox" Grid.Column="1" Header="Fotogramas por segundo" HorizontalAlignment="Stretch"
+                      SelectionChanged="OnQualityChanged">
+              <ComboBoxItem Content="60 fps" Tag="60" />
+              <ComboBoxItem Content="30 fps" Tag="30" />
+            </ComboBox>
+            <ComboBox x:Name="CodecBox" Grid.Row="1" Header="Códec" HorizontalAlignment="Stretch" SelectionChanged="OnQualityChanged">
+              <ComboBoxItem Content="HEVC (recomendado)" Tag="1" />
+              <ComboBoxItem Content="HEVC HDR (PS5)" Tag="2" />
+              <ComboBoxItem Content="H.264 (máxima compatibilidad)" Tag="0" />
+            </ComboBox>
+            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+              <TextBlock x:Name="BitrateLabel" Text="Bitrate" />
+              <Slider x:Name="BitrateSlider" Minimum="0" Maximum="50" StepFrequency="1" TickFrequency="5"
+                      ValueChanged="OnBitrateChanged" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="28">
+              <ToggleSwitch x:Name="ReconnectToggle" Header="Reconectar si se corta" Toggled="OnQualityChanged" />
+              <ToggleSwitch x:Name="WakeToggle" Header="Despertar la consola si está en reposo" Toggled="OnQualityChanged" />
+              <ToggleSwitch x:Name="DualSenseToggle" Header="Gatillos adaptativos y luz del DualSense" Toggled="OnQualityChanged" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

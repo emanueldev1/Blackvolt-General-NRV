@@ -19,11 +19,24 @@ public partial class App : Application
     /// <summary>Reason the engine could not start, shown on the home page.</summary>
     public static string? EngineError { get; private set; }
 
+    /// <summary>Paired PlayStation consoles (encrypted store). Null if Remote Play is unavailable.</summary>
+    internal static ConsoleLibrary? Consoles { get; private set; }
+
+    public static string? ConsolesError { get; private set; }
+
+    /// <summary>Consoles imported automatically from chiaki-ng / Veyra on first launch.</summary>
+    internal static uint ConsolesImportedOnStart { get; set; }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         StartEngine();
+        OpenConsoles();
         MainWindow = new MainWindow();
-        MainWindow.Closed += (_, _) => Engine?.Dispose();
+        MainWindow.Closed += (_, _) =>
+        {
+            Consoles?.Dispose();
+            Engine?.Dispose();
+        };
         MainWindow.Activate();
     }
 
@@ -36,6 +49,20 @@ public partial class App : Application
         Engine?.Dispose();
         Engine = null;
         StartEngine();
+    }
+
+    private static void OpenConsoles()
+    {
+        try
+        {
+            Consoles = ConsoleLibrary.Open();
+            // First run: bring over pairings from chiaki-ng / Veyra so nobody has to pair again.
+            if (Consoles.List().Count == 0) ConsolesImportedOnStart = Consoles.ImportInstalled();
+        }
+        catch (Exception ex) when (ex is EngineException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            ConsolesError = ex.Message;
+        }
     }
 
     private static void StartEngine()

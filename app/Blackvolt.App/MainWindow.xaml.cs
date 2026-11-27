@@ -11,6 +11,7 @@ public sealed partial class MainWindow : Window
     {
         ["home"] = typeof(HomePage),
         ["player"] = typeof(PlayerPage),
+        ["remote"] = typeof(RemotePlayPage),
         ["capture"] = typeof(ComingSoonPage),
         ["export"] = typeof(ComingSoonPage),
         ["runtimes"] = typeof(RuntimesPage),
@@ -25,6 +26,13 @@ public sealed partial class MainWindow : Window
         SetTitleBar(TitleBar);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 800));
         ContentFrame.Navigate(typeof(HomePage));
+    }
+
+    /// <summary>Hides the navigation pane while streaming: the game gets the whole window.</summary>
+    internal void SetImmersive(bool on)
+    {
+        Nav.IsPaneVisible = !on;
+        Nav.IsPaneToggleButtonVisible = !on;
     }
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

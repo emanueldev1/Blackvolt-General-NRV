@@ -41,6 +41,8 @@ set(BV_ENGINE_SOURCES
   src/media/VideoDecoder.cpp
   src/player/Player.cpp
   src/ngx/NgxRuntime.cpp
+  src/ngx/VideoSuperResolution.cpp
+  src/ngx/TrueHdr.cpp
   src/runtime/Catalog.cpp
   src/runtime/Manifest.cpp
   src/runtime/Sha256.cpp

@@ -5,6 +5,7 @@
 #include "core/EngineHandle.h"
 #include "player/Player.h"
 #include "render/D3D12Presenter.h"
+#include "render/EnhanceConvert.h"
 
 #include <algorithm>
 #include <cstring>
@@ -35,7 +36,8 @@ bv_result BV_CALL bv_player_create(bv_engine* engine, bv_player** out_player) {
 #if defined(_WIN32)
     try {
         auto p = std::make_unique<bv_player>();
-        p->presenter = bv::render::D3D12Presenter::create(engine->engine.gpu());
+        p->presenter = bv::render::D3D12Presenter::create(engine->engine.gpu(), engine->engine.ngx(),
+                                                               &engine->engine.telemetry());
         if (!p->presenter) return BV_ERR_INTERNAL;
         p->player = std::make_unique<bv::player::Player>(engine->engine.gpu().device(), *p->presenter,
                                                          [] { return bv::audio::createWasapiSink(); },
@@ -130,5 +132,27 @@ bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out) {
     *out = i;
     return BV_OK;
 }
+
+bv_result BV_CALL bv_player_set_enhance(bv_player* player, const bv_enhance_settings* settings) {
+    if (!player || !settings || settings->size < sizeof(bv_enhance_settings)) return BV_ERR_INVALID_ARGUMENT;
+#if defined(_WIN32)
+    player->presenter->setEnhance(bv::render::fromApi(*settings));
+    return BV_OK;
+#else
+    return BV_ERR_UNSUPPORTED;
+#endif
+}
+
+bv_result BV_CALL bv_player_enhance_status(bv_player* player, bv_enhance_status* out) {
+    if (!player || !out || out->size < sizeof(bv_enhance_status)) return BV_ERR_INVALID_ARGUMENT;
+#if defined(_WIN32)
+    bv::render::toApi(player->presenter->enhanceStatus(), *out);
+    return BV_OK;
+#else
+    return BV_ERR_UNSUPPORTED;
+#endif
+}
+
+uint32_t BV_CALL bv_display_hdr(float* peak_nits) { return bv::render::displayHdrInfo(peak_nits) ? 1u : 0u; }
 
 } // extern "C"

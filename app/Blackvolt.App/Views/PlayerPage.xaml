@@ -78,6 +78,10 @@
         <Slider x:Name="Volume" Grid.Column="4" Width="110" Minimum="0" Maximum="100" Value="100"
                 VerticalAlignment="Center" ValueChanged="OnVolumeChanged" />
         <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4">
+          <Button x:Name="EnhanceButton" Background="Transparent" BorderThickness="0"
+                  ToolTipService.ToolTip="Mejora de video (RTX)">
+            <FontIcon Glyph="&#xE790;" Foreground="White" FontSize="14" />
+          </Button>
           <Button Click="OnToggleStatsClick" Background="Transparent" BorderThickness="0"
                   ToolTipService.ToolTip="Estadísticas (I)">
             <FontIcon Glyph="&#xE9D9;" Foreground="White" FontSize="14" />

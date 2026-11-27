@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.StreamPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    KeyboardAcceleratorPlacementMode="Hidden">
+
+  <Grid x:Name="Root" Background="Black" IsTabStop="True" PointerMoved="OnPointerMoved"
+        KeyDown="OnKeyDown" KeyUp="OnKeyUp" DoubleTapped="OnDoubleTapped">
+    <SwapChainPanel x:Name="Video" SizeChanged="OnVideoSizeChanged"
+                    CompositionScaleChanged="OnCompositionScaleChanged" />
+
+    <!-- Connecting / reconnecting / error -->
+    <StackPanel x:Name="StatusPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" MaxWidth="520">
+      <ProgressRing x:Name="StatusRing" IsActive="True" Width="44" Height="44"
+                    Foreground="{StaticResource BvVoltBrush}" />
+      <TextBlock x:Name="StatusTitle" Text="Conectando…" HorizontalAlignment="Center" Foreground="White"
+                 Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Name="StatusDetail" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Foreground="#99FFFFFF" />
+      <StackPanel x:Name="StatusActions" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center"
+                  Visibility="Collapsed" Margin="0,6,0,0">
+        <Button Content="Reintentar" Click="OnRetry" Style="{StaticResource AccentButtonStyle}" />
+        <Button Content="Volver" Click="OnBack" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Live stats -->
+    <Border x:Name="StatsPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
+            Margin="16,64,16,16" Padding="14,10" CornerRadius="6" Background="#B3000000">
+      <TextBlock x:Name="StatsText" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                 Foreground="#E6FFFFFF" LineHeight="18" />
+    </Border>
+
+    <!-- Top bar, auto-hides while playing -->
+    <Grid x:Name="TopBar" VerticalAlignment="Top" Padding="12,10,16,30" ColumnSpacing="6">
+      <Grid.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#CC000000" Offset="0" />
+          <GradientStop Color="#00000000" Offset="1" />
+        </LinearGradientBrush>
+      </Grid.Background>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Desconectar y volver">
+        <FontIcon Glyph="&#xE72B;" Foreground="White" FontSize="14" />
+      </Button>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="6,0">
+        <TextBlock x:Name="ConsoleName" Foreground="White" FontWeight="SemiBold" />
+        <Border x:Name="QualityChip" Background="#33C6FF3D" CornerRadius="4" Padding="8,2" Visibility="Collapsed">
+          <TextBlock x:Name="QualityText" Foreground="{StaticResource BvVoltBrush}" FontSize="12" FontWeight="SemiBold" />
+        </Border>
+        <TextBlock x:Name="PadText" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+        <Button Click="OnPsButton" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Botón PS (P)">
+          <FontIcon Glyph="&#xE80F;" Foreground="White" FontSize="14" />
+        </Button>
+        <Button x:Name="EnhanceButton" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mejora de video (RTX)">
+          <FontIcon Glyph="&#xE790;" Foreground="White" FontSize="14" />
+        </Button>
+        <Button Click="OnToggleStatsClick" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Estadísticas (F3)">
+          <FontIcon Glyph="&#xE9D9;" Foreground="White" FontSize="14" />
+        </Button>
+        <Button Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Controles de teclado">
+          <FontIcon Glyph="&#xE92E;" Foreground="White" FontSize="14" />
+          <Button.Flyout>
+            <Flyout>
+              <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12" LineHeight="20"
+                         Text="WASD        stick izquierdo&#x0a;Flechas     cruceta&#x0a;Enter/Esp.  ✕&#x0a;Retroceso   ○&#x0a;Q / E       □ / △&#x0a;1 / 3       L1 / R1&#x0a;2 / 4       L2 / R2&#x0a;O           Options&#x0a;T           Panel táctil&#x0a;P           Botón PS&#x0a;F11         Pantalla completa&#x0a;F3          Estadísticas" />
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <Slider x:Name="Volume" Width="96" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                ValueChanged="OnVolumeChanged" Margin="8,0" />
+        <Button Click="OnFullscreen" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Pantalla completa (F11)">
+          <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" Foreground="White" FontSize="14" />
+        </Button>
+        <Button Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Más">
+          <FontIcon Glyph="&#xE712;" Foreground="White" FontSize="14" />
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuFlyoutItem Text="Pedir imagen nítida (fotograma clave)" Click="OnKeyframe" />
+              <MenuFlyoutItem Text="Poner la consola en reposo" Click="OnSleepConsole" />
+              <MenuFlyoutSeparator />
+              <MenuFlyoutItem Text="Desconectar" Click="OnBack" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

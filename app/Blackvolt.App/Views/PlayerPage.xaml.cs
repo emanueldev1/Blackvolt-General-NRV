@@ -1,3 +1,5 @@
+using Blackvolt.App.Controls;
+using Blackvolt.App.Services;
 using Blackvolt.App.Interop;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -17,6 +19,7 @@ public sealed partial class PlayerPage : Page
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private PlayerSession? _player;
+    private readonly EnhancePanel _enhance = new();
     private bool _scrubbing;
     private bool _updatingTimeline;
     private DateTime _lastPointerMove = DateTime.UtcNow;
@@ -25,6 +28,8 @@ public sealed partial class PlayerPage : Page
     {
         InitializeComponent();
         _timer.Tick += (_, _) => Tick();
+        _enhance.Changed += () => _player?.SetEnhance(AppSettings.Current.Video);
+        EnhanceButton.Flyout = new Flyout { Content = _enhance };
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -37,6 +42,7 @@ public sealed partial class PlayerPage : Page
         try
         {
             _player ??= PlayerSession.Create(App.Engine, Video);
+            _player.SetEnhance(AppSettings.Current.Video);
             ResizeSwapChain();
             _timer.Start();
         }
@@ -91,10 +97,12 @@ public sealed partial class PlayerPage : Page
             Transport.Visibility = Visibility.Collapsed;
         }
 
-        if (StatsPanel.Visibility == Visibility.Visible) UpdateStats(info);
+        var enhance = _player.EnhanceStatus;
+        _enhance.ShowStatus(enhance);
+        if (StatsPanel.Visibility == Visibility.Visible) UpdateStats(info, enhance);
     }
 
-    private void UpdateStats(NativeEngine.PlayerInfo info)
+    private void UpdateStats(NativeEngine.PlayerInfo info, in NativeEnhance.Status enhance)
     {
         var engine = App.Engine;
         var frame = engine?.GetStats("frame");
@@ -109,7 +117,8 @@ public sealed partial class PlayerPage : Page
             $"decode     {Ms(decode?.AvgUs),7} ms\n" +
             $"present    {Ms(present?.AvgUs),7} ms\n" +
             $"mostrados  {info.FramesPresented,7}\n" +
-            $"perdidos   {info.FramesDropped,7}";
+            $"perdidos   {info.FramesDropped,7}" +
+            (NativeEnhance.Describe(enhance) is { Length: > 0 } gpu ? "\n" + gpu : "");
     }
 
     private static string Ms(double? us) => us is > 0 ? (us.Value / 1000.0).ToString("0.00") : "  –";
