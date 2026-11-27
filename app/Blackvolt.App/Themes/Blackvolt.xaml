@@ -3,12 +3,6 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-  <!-- Brand: deep black + electric volt accent. -->
-  <Color x:Key="BvVoltColor">#FFC6FF3D</Color>
-  <Color x:Key="BvVoltDimColor">#33C6FF3D</Color>
-  <SolidColorBrush x:Key="BvVoltBrush" Color="{StaticResource BvVoltColor}" />
-  <SolidColorBrush x:Key="BvVoltDimBrush" Color="{StaticResource BvVoltDimColor}" />
-
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Default">
       <Color x:Key="SystemAccentColor">#FFC6FF3D</Color>
@@ -16,6 +10,13 @@
       <Color x:Key="SystemAccentColorDark1">#FFA8E01F</Color>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
+
+  <!-- Brand: deep black + electric volt accent. -->
+  <Color x:Key="BvVoltColor">#FFC6FF3D</Color>
+  <Color x:Key="BvVoltDimColor">#33C6FF3D</Color>
+  <SolidColorBrush x:Key="BvVoltBrush" Color="{StaticResource BvVoltColor}" />
+  <SolidColorBrush x:Key="BvVoltDimBrush" Color="{StaticResource BvVoltDimColor}" />
+
 
   <Style x:Key="BvCardStyle" TargetType="Border">
     <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
