@@ -1,0 +1,28 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure engine
+        run: cmake --preset windows-x64
+
+      - name: Build engine
+        run: cmake --build --preset debug
+
+      - name: Test engine
+        run: ctest --preset debug
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build app
+        run: dotnet build app/Blackvolt.App -c Debug -p:Platform=x64

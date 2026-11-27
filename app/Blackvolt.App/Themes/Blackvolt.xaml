@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Brand: deep black + electric volt accent. -->
+  <Color x:Key="BvVoltColor">#FFC6FF3D</Color>
+  <Color x:Key="BvVoltDimColor">#33C6FF3D</Color>
+  <SolidColorBrush x:Key="BvVoltBrush" Color="{StaticResource BvVoltColor}" />
+  <SolidColorBrush x:Key="BvVoltDimBrush" Color="{StaticResource BvVoltDimColor}" />
+
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Default">
+      <Color x:Key="SystemAccentColor">#FFC6FF3D</Color>
+      <Color x:Key="SystemAccentColorLight1">#FFD4FF6B</Color>
+      <Color x:Key="SystemAccentColorDark1">#FFA8E01F</Color>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <Style x:Key="BvCardStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="20" />
+  </Style>
+
+  <Style x:Key="BvChipStyle" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource BvVoltDimBrush}" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="Margin" Value="0,0,8,8" />
+  </Style>
+
+  <Style x:Key="BvMetricValueStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+    <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+  </Style>
+</ResourceDictionary>

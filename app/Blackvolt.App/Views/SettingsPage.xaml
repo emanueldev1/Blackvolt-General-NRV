@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel Padding="36,28" Spacing="20" MaxWidth="900" HorizontalAlignment="Left">
+    <TextBlock Text="Ajustes" Style="{StaticResource TitleLargeTextBlockStyle}" />
+
+    <Border Style="{StaticResource BvCardStyle}">
+      <StackPanel Spacing="8">
+        <TextBlock Text="GPUs detectadas" Style="{StaticResource BodyStrongTextBlockStyle}" />
+        <TextBlock Text="Blackvolt elige automáticamente la mejor GPU (NVIDIA RTX primero)."
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <ListView x:Name="AdapterList" SelectionMode="None" />
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource BvCardStyle}">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Acerca de" Style="{StaticResource BodyStrongTextBlockStyle}" />
+        <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</Page>

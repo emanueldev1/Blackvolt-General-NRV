@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer>
+    <StackPanel Padding="36,28" Spacing="20" MaxWidth="1100" HorizontalAlignment="Left">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Bienvenido a Blackvolt" Style="{StaticResource TitleLargeTextBlockStyle}" />
+        <TextBlock Text="Mejora de video en tiempo real con tu GPU."
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      </StackPanel>
+
+      <InfoBar x:Name="EngineErrorBar" Severity="Error" IsOpen="False" IsClosable="False"
+               Title="El motor no pudo iniciar" />
+
+      <!-- GPU card -->
+      <Border x:Name="GpuCard" Style="{StaticResource BvCardStyle}">
+        <Grid ColumnSpacing="24">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <FontIcon Glyph="&#xE7F8;" FontSize="40" Foreground="{StaticResource BvVoltBrush}"
+                    VerticalAlignment="Top" />
+          <StackPanel Grid.Column="1" Spacing="6">
+            <TextBlock Text="GPU ACTIVA" Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" CharacterSpacing="80" />
+            <TextBlock x:Name="GpuName" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock x:Name="GpuDetails" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="CAPACIDADES" Margin="0,12,0,4" Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" CharacterSpacing="80" />
+            <ItemsControl x:Name="CapabilityChips">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <Border Style="{StaticResource BvChipStyle}">
+                    <TextBlock Text="{x:Bind}" Style="{StaticResource CaptionTextBlockStyle}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Quick actions -->
+      <Grid ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Style="{StaticResource BvCardStyle}">
+          <StackPanel Spacing="6">
+            <SymbolIcon Symbol="Play" HorizontalAlignment="Left" />
+            <TextBlock Text="Reproducir un video" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="Súper resolución y HDR en archivos locales." TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="1" Style="{StaticResource BvCardStyle}">
+          <StackPanel Spacing="6">
+            <SymbolIcon Symbol="Video" HorizontalAlignment="Left" />
+            <TextBlock Text="Capturadora" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="Consola o cámara con latencia mínima." TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="2" Style="{StaticResource BvCardStyle}">
+          <StackPanel Spacing="6">
+            <SymbolIcon Symbol="Save" HorizontalAlignment="Left" />
+            <TextBlock Text="Exportar" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="Procesa y guarda con NVENC, en cola." TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

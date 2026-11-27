@@ -1,0 +1,21 @@
+# Build
+build/
+out/
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+*.log
+# Native
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+# Packages
+packages/
+*.nupkg
+# Third-party SDKs (download locally, never commit)
+third_party/sdk/

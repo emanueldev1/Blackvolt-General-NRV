@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Blackvolt.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Blackvolt">
+  <Window.SystemBackdrop>
+    <MicaBackdrop Kind="BaseAlt" />
+  </Window.SystemBackdrop>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="40" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Custom title bar -->
+    <Grid x:Name="TitleBar" Padding="16,0,0,0">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <Border Width="14" Height="14" CornerRadius="3" Background="{StaticResource BvVoltBrush}" />
+        <TextBlock Text="BLACKVOLT" FontWeight="SemiBold" CharacterSpacing="120"
+                   Style="{StaticResource CaptionTextBlockStyle}" />
+      </StackPanel>
+    </Grid>
+
+    <NavigationView x:Name="Nav" Grid.Row="1"
+                    IsBackButtonVisible="Collapsed"
+                    IsSettingsVisible="True"
+                    PaneDisplayMode="LeftCompact"
+                    SelectionChanged="OnNavSelectionChanged">
+      <NavigationView.MenuItems>
+        <NavigationViewItem Content="Inicio" Tag="home" Icon="Home" IsSelected="True" />
+        <NavigationViewItem Content="Reproductor" Tag="player" Icon="Play" />
+        <NavigationViewItem Content="Captura" Tag="capture" Icon="Video" />
+        <NavigationViewItem Content="Exportar" Tag="export" Icon="Save" />
+        <NavigationViewItem Content="Estadísticas" Tag="stats">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE9D2;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.MenuItems>
+      <Frame x:Name="ContentFrame" />
+    </NavigationView>
+  </Grid>
+</Window>

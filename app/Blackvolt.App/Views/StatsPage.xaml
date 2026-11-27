@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.StatsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Blackvolt.App.Views">
+  <StackPanel Padding="36,28" Spacing="20">
+    <StackPanel Spacing="4">
+      <TextBlock Text="Estadísticas" Style="{StaticResource TitleLargeTextBlockStyle}" />
+      <TextBlock Text="Tiempo por etapa del pipeline (últimos ~4 s). Se actualiza dos veces por segundo."
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </StackPanel>
+
+    <ItemsControl x:Name="StageList">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="local:StageRow">
+          <Border Style="{StaticResource BvCardStyle}" Margin="0,0,0,12">
+            <Grid ColumnSpacing="24">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="160" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="{x:Bind Label}" Style="{StaticResource BodyStrongTextBlockStyle}"
+                         VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="PROMEDIO" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock Text="{x:Bind Avg}" Style="{StaticResource BvMetricValueStyle}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="P95" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock Text="{x:Bind P95}" Style="{StaticResource BvMetricValueStyle}" />
+              </StackPanel>
+              <StackPanel Grid.Column="3">
+                <TextBlock Text="P99" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock Text="{x:Bind P99}" Style="{StaticResource BvMetricValueStyle}" />
+              </StackPanel>
+              <StackPanel Grid.Column="4">
+                <TextBlock Text="MÁXIMO" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock Text="{x:Bind Max}" Style="{StaticResource BvMetricValueStyle}" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <TextBlock x:Name="EmptyHint" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+               Text="Aún no hay datos. Reproduce o captura un video para ver las métricas." />
+  </StackPanel>
+</Page>
