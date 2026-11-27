@@ -3,6 +3,7 @@
 #include "blackvolt/bv_api.h"
 #include "export/Exporter.h"
 #include "media/Demuxer.h"
+#include "media/FFmpeg.h"
 
 #include <chrono>
 #include <cstdio>
@@ -60,10 +61,12 @@ TEST(export_transcodes_and_scales_clip) {
     o.output = output;
     o.codec = Codec::H264;
     o.height = 360;
+    av_log_set_level(AV_LOG_VERBOSE); // diagnóstico si algo se atasca en CI
     // Software encoders only, so the test runs anywhere.
     o.encoders = {"libx264", "mpeg4"};
     job.start(o);
     const auto p = runToEnd(job);
+    av_log_set_level(AV_LOG_INFO);
     if (p.state != State::Done) std::printf("  export: %s\n", p.message.c_str());
     CHECK(p.state == State::Done);
     CHECK(p.frames > 10);

@@ -1,5 +1,6 @@
 #include "Exporter.h"
 
+#include "core/Log.h"
 #include "media/FFmpeg.h"
 
 extern "C" {
@@ -11,6 +12,7 @@ extern "C" {
 #include <cmath>
 #include <filesystem>
 #include <string_view>
+#include <thread>
 
 namespace bv::exporter {
 
@@ -174,7 +176,8 @@ void Job::run() {
     if (!decoder) return fail("no hay decodificador para este video");
     CodecCtxPtr dec(avcodec_alloc_context3(decoder));
     avcodec_parameters_to_context(dec.get(), inVideo->codecpar);
-    dec->thread_count = 0;
+    const int threads = static_cast<int>(std::clamp(std::thread::hardware_concurrency(), 2u, 16u));
+    dec->thread_count = threads;
     dec->pkt_timebase = inVideo->time_base;
     if ((err = avcodec_open2(dec.get(), decoder, nullptr)) < 0) return fail("no se pudo abrir el decodificador: " + errorString(err));
 
@@ -213,13 +216,15 @@ void Job::run() {
         ctx->colorspace = dec->colorspace;
         ctx->color_range = dec->color_range == AVCOL_RANGE_JPEG ? AVCOL_RANGE_MPEG : dec->color_range;
         ctx->gop_size = std::max(1, static_cast<int>(std::lround(av_q2d(frameRate) * 2)));
-        ctx->thread_count = 0;
+        ctx->thread_count = threads;
         if (out->oformat->flags & AVFMT_GLOBALHEADER) ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
         AVDictionary* opts = nullptr;
         ctx->pix_fmt = configure(ctx.get(), name, options_.quality, tenBit, &opts);
         err = avcodec_open2(ctx.get(), codec, &opts);
         av_dict_free(&opts);
         if (err >= 0) {
+            bv::log::info("export: {} {}x{} → {} {}x{}", avcodec_get_name(inVideo->codecpar->codec_id), dec->width,
+                          dec->height, name, outW, outH);
             enc = std::move(ctx);
             encoderName = name;
             break;
@@ -344,6 +349,7 @@ void Job::run() {
         }
     };
 
+    bv::log::info("export: escribiendo {}", options_.output);
     while (!cancel_ && !writeFailed && av_read_frame(in.get(), packet.get()) >= 0) {
         if (packet->stream_index == vIndex) {
             if (avcodec_send_packet(dec.get(), packet.get()) >= 0) encodeDecoded();
@@ -356,11 +362,13 @@ void Job::run() {
         av_packet_unref(packet.get());
     }
 
+    bv::log::info("export: fin de la entrada tras {} fotogramas", frames);
     if (!cancel_ && !writeFailed) {
         avcodec_send_packet(dec.get(), nullptr);
         encodeDecoded();
         drainEncoder(nullptr);
         if (av_write_trailer(out.get()) < 0) writeFailed = true;
+        bv::log::info("export: cerrado ({} fotogramas)", frames);
     }
     out.reset(); // closes the file before a possible delete
 
