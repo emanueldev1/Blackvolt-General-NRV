@@ -47,6 +47,12 @@ set(BV_ENGINE_SOURCES
   src/gpu/Adapters.cpp
   src/gpu/D3D12Context.cpp
   src/telemetry/Telemetry.cpp
+  src/remote/ConsoleProfile.cpp
+  src/remote/QtSettingsCodec.cpp
+  src/remote/ChiakiImport.cpp
+  src/remote/VeyraImport.cpp
+  src/remote/Protect.cpp
+  src/remote/ConsoleStore.cpp
 )
 
 # Platform-independent core, linked by the DLL and by the unit tests.
@@ -67,7 +73,7 @@ endif()
 target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json bv_ffmpeg)
 
 if(WIN32)
-  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32)
+  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32)
 endif()
 
 if(BV_HAS_NGX)
