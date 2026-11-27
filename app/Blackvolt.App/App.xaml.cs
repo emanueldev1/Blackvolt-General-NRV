@@ -10,7 +10,20 @@ public partial class App : Application
 
     public App()
     {
-        InitializeComponent();
+        Services.CrashLog.Install();
+        UnhandledException += (_, e) =>
+        {
+            Services.CrashLog.Fatal("Error en la interfaz", e.Exception);
+        };
+        try
+        {
+            InitializeComponent();
+        }
+        catch (Exception ex)
+        {
+            Services.CrashLog.Fatal("No se pudo cargar la interfaz (App.xaml)", ex);
+            throw;
+        }
     }
 
     /// <summary>Engine session shared by all pages. Null when no compatible GPU was found.</summary>
@@ -31,7 +44,15 @@ public partial class App : Application
     {
         StartEngine();
         OpenConsoles();
-        MainWindow = new MainWindow();
+        try
+        {
+            MainWindow = new MainWindow();
+        }
+        catch (Exception ex)
+        {
+            Services.CrashLog.Fatal("No se pudo crear la ventana principal", ex);
+            throw;
+        }
         MainWindow.Closed += (_, _) =>
         {
             Consoles?.Dispose();
@@ -77,8 +98,11 @@ public partial class App : Application
         catch (Exception ex) when (ex is EngineException or DllNotFoundException or EntryPointNotFoundException)
         {
             EngineError = ex is DllNotFoundException
-                ? "No se encontró blackvolt_engine.dll. Compila el motor antes de ejecutar la app (ver README)."
+                ? File.Exists(Path.Combine(AppContext.BaseDirectory, "blackvolt_engine.dll"))
+                    ? "No se pudo cargar blackvolt_engine.dll: falta alguna de sus dependencias (por ejemplo el runtime de Visual C++). " + ex.Message
+                    : "No se encontró blackvolt_engine.dll. Compila el motor antes de ejecutar la app (ver README)."
                 : ex.Message;
+            Services.CrashLog.Write("El motor no arrancó", ex);
         }
     }
 }

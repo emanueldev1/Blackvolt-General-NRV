@@ -67,6 +67,24 @@ jobs:
       - name: Build app
         run: msbuild app/Blackvolt.App/Blackvolt.App.csproj /restore /p:Configuration=Debug /p:Platform=x64 /v:minimal
 
+      - name: Smoke test (the window must open and stay open)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem app/Blackvolt.App/bin -Recurse -Filter Blackvolt.exe | Select-Object -First 1
+          if (-not $exe) { throw "No se encontró Blackvolt.exe" }
+          $crash = Join-Path $env:LOCALAPPDATA 'Blackvolt\crash.log'
+          Remove-Item $crash -ErrorAction SilentlyContinue
+          $p = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 25
+          $p.Refresh()
+          if (Test-Path $crash) { Get-Content $crash }
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-3) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Blackvolt' } | Select-Object -First 5 | Format-List TimeCreated, ProviderName, Id, Message
+          if ($p.HasExited) { throw "Blackvolt se cerró al arrancar (código $($p.ExitCode))" }
+          "Ventana: 0x{0:X} · título '{1}'" -f $p.MainWindowHandle.ToInt64(), $p.MainWindowTitle
+          Stop-Process -Id $p.Id -Force
+          if (Test-Path $crash) { throw "Blackvolt registró un error al arrancar" }
+
       - name: Show XAML compiler output
         if: failure()
         shell: pwsh
