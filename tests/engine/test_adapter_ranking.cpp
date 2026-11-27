@@ -58,3 +58,12 @@ TEST(nvidia_driver_version_format) {
     CHECK(nvidiaDriverVersion(umd, buf, sizeof(buf)));
     CHECK(std::string_view(buf) == "566.36");
 }
+
+TEST(legacy_rtx_detection) {
+    CHECK(isTuringOrAmpereRtx("NVIDIA GeForce RTX 2060 SUPER"));
+    CHECK(isTuringOrAmpereRtx("NVIDIA GeForce RTX 3080 Ti"));
+    CHECK(isTuringOrAmpereRtx("NVIDIA RTX A4000"));
+    CHECK(!isTuringOrAmpereRtx("NVIDIA GeForce RTX 4070"));
+    CHECK(!isTuringOrAmpereRtx("NVIDIA GeForce RTX 5090"));
+    CHECK(!isTuringOrAmpereRtx("NVIDIA GeForce GTX 1080"));
+}

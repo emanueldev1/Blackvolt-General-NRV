@@ -6,7 +6,7 @@ namespace Blackvolt.App.Interop;
 internal static partial class NativeEngine
 {
     private const string Dll = "blackvolt_engine";
-    public const uint ApiVersion = 1;
+    public const uint ApiVersion = 2;
     public const uint BestAdapter = uint.MaxValue;
 
     public enum Result : int
@@ -48,15 +48,8 @@ internal static partial class NativeEngine
         public fixed byte Name[128];
         public fixed byte DriverVersion[32];
 
-        public readonly string NameText { get { fixed (byte* p = Name) return Utf8(p, 128); } }
-        public readonly string DriverText { get { fixed (byte* p = DriverVersion) return Utf8(p, 32); } }
-
-        private static string Utf8(byte* p, int max)
-        {
-            int len = 0;
-            while (len < max && p[len] != 0) len++;
-            return System.Text.Encoding.UTF8.GetString(p, len);
-        }
+        public readonly string NameText { get { fixed (byte* p = Name) return Utf8.Read(p, 128); } }
+        public readonly string DriverText { get { fixed (byte* p = DriverVersion) return Utf8.Read(p, 32); } }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -70,6 +63,69 @@ internal static partial class NativeEngine
         public double P99Us;
         public double MaxUs;
     }
+
+    public enum Feature : int
+    {
+        DlssSuperResolution = 0,
+        DlssRayReconstruction = 1,
+        DlssFrameGeneration = 2,
+        DlssNeuralRendering = 3,
+        RtxVideoSuperResolution = 4,
+        RtxTrueHdr = 5,
+    }
+
+    public const int FeatureCount = 6;
+
+    public enum RuntimeState : int
+    {
+        Missing = 0,
+        Found = 1,
+        Ready = 2,
+        UnsupportedGpu = 3,
+        DriverTooOld = 4,
+        NgxUnavailable = 5,
+    }
+
+    public enum RuntimeOrigin : int { Unknown = 0, Official = 1, Community = 2 }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct RuntimeStatus
+    {
+        public uint Size;
+        public Feature Feature;
+        public RuntimeState State;
+        public RuntimeOrigin Origin;
+        public fixed byte Label[96];
+        public fixed byte Path[520];
+
+        public readonly string LabelText { get { fixed (byte* p = Label) return Utf8.Read(p, 96); } }
+        public readonly string PathText { get { fixed (byte* p = Path) return Utf8.Read(p, 520); } }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct RuntimeCandidate
+    {
+        public uint Size;
+        public Feature Feature;
+        public RuntimeOrigin Origin;
+        public fixed byte Label[96];
+        public fixed byte Path[520];
+
+        public readonly string LabelText { get { fixed (byte* p = Label) return Utf8.Read(p, 96); } }
+        public readonly string PathText { get { fixed (byte* p = Path) return Utf8.Read(p, 520); } }
+    }
+
+    [LibraryImport(Dll, EntryPoint = "bv_set_runtime_paths", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial Result SetRuntimePaths(string bundledDir, string userDir, string manifest);
+
+    [LibraryImport(Dll, EntryPoint = "bv_runtime_import", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial Result ImportRuntime(string sourcePath, Feature feature, out RuntimeStatus status);
+
+    [LibraryImport(Dll, EntryPoint = "bv_runtime_scan", StringMarshalling = StringMarshalling.Utf8)]
+    public static unsafe partial Result ScanRuntimes(string folder, RuntimeCandidate* output, uint capacity, out uint count);
+
+    [LibraryImport(Dll, EntryPoint = "bv_engine_runtime_status")]
+    public static partial Result GetRuntimeStatus(nint engine, Feature feature, out RuntimeStatus status);
 
     [LibraryImport(Dll, EntryPoint = "bv_api_version")]
     public static partial uint GetApiVersion();
@@ -88,4 +144,14 @@ internal static partial class NativeEngine
 
     [LibraryImport(Dll, EntryPoint = "bv_engine_stage_stats", StringMarshalling = StringMarshalling.Utf8)]
     public static partial Result GetStageStats(nint engine, string stage, out StageStats stats);
+}
+
+internal static unsafe class Utf8
+{
+    public static string Read(byte* p, int max)
+    {
+        int len = 0;
+        while (len < max && p[len] != 0) len++;
+        return System.Text.Encoding.UTF8.GetString(p, len);
+    }
 }

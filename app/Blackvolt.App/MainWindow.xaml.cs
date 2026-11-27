@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
         ["player"] = typeof(ComingSoonPage),
         ["capture"] = typeof(ComingSoonPage),
         ["export"] = typeof(ComingSoonPage),
+        ["runtimes"] = typeof(RuntimesPage),
         ["stats"] = typeof(StatsPage),
         ["settings"] = typeof(SettingsPage),
     };

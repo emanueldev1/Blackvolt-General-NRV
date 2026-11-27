@@ -46,6 +46,18 @@ uint32_t inferCapabilities(uint32_t vendorId, std::string_view name) {
     return caps;
 }
 
+bool isTuringOrAmpereRtx(std::string_view name) {
+    // "RTX 2060", "RTX 3080 Ti", "RTX A4000" (Ampere workstation) -> true; "RTX 4070", "RTX 5090" -> false.
+    for (std::size_t i = 0; i + 5 < name.size(); ++i) {
+        if (!containsNoCase(name.substr(i, 4), "RTX ")) continue;
+        const char c0 = name[i + 4];
+        if (c0 == 'A' || c0 == 'a') return true;
+        if (c0 == '2' || c0 == '3') return std::isdigit(static_cast<unsigned char>(name[i + 5])) != 0;
+        return false;
+    }
+    return false;
+}
+
 int64_t score(const bv_adapter_info& info) {
     int64_t s = 0;
     if (info.capabilities & BV_CAP_RTX_VIDEO_SR) s += 4'000'000;

@@ -18,6 +18,9 @@ bv_gpu_vendor vendorFromId(uint32_t vendorId);
 // (RTX Video SDK, NVENC session) refine these once the SDKs are wired in.
 uint32_t inferCapabilities(uint32_t vendorId, std::string_view name);
 
+// True for GeForce RTX 20 / 30 series (Turing / Ampere) by marketing name.
+bool isTuringOrAmpereRtx(std::string_view name);
+
 // Higher is better. RTX > other NVIDIA > other discrete > integrated; VRAM breaks ties.
 int64_t score(const bv_adapter_info& info);
 

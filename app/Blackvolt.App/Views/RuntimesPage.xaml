@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.RuntimesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Blackvolt.App.Views">
+  <ScrollViewer>
+    <StackPanel Padding="36,28" Spacing="20" MaxWidth="1100" HorizontalAlignment="Left">
+      <Grid ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Spacing="4">
+          <TextBlock Text="Runtimes NVIDIA" Style="{StaticResource TitleLargeTextBlockStyle}" />
+          <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                     Text="Las DLLs de DLSS y RTX Video que usa Blackvolt. Las incluidas se verifican por hash; también puedes importar otras versiones." />
+        </StackPanel>
+        <Button Grid.Column="1" VerticalAlignment="Bottom" Click="OnImportFromFolder"
+                Style="{StaticResource AccentButtonStyle}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <FontIcon Glyph="&#xE8B7;" FontSize="14" />
+            <TextBlock Text="Importar desde Veyra u otra carpeta" />
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <InfoBar x:Name="Notice" IsOpen="False" />
+
+      <ItemsControl x:Name="RuntimeList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="local:RuntimeRow">
+            <Border Style="{StaticResource BvCardStyle}" Margin="0,0,0,10" Padding="20,14">
+              <Grid ColumnSpacing="20">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="12" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Ellipse Width="10" Height="10" Fill="{x:Bind StateBrush}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                  <TextBlock Text="{x:Bind Detail}" TextTrimming="CharacterEllipsis"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Style="{StaticResource CaptionTextBlockStyle}" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{x:Bind StateText}" VerticalAlignment="Center"
+                           Style="{StaticResource CaptionTextBlockStyle}" />
+                <Button Grid.Column="3" Content="Importar DLL…" Tag="{x:Bind FeatureIndex}" Click="OnImportFile" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

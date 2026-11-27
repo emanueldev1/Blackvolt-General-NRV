@@ -29,6 +29,17 @@
   <PropertyGroup>
     <EngineBinDir>$(MSBuildThisFileDirectory)..\..\build\engine\bin\$(Configuration)\</EngineBinDir>
   </PropertyGroup>
+  <!-- Runtime manifest and, when present, the NVIDIA DLLs fetched by scripts/fetch-sdks.ps1. -->
+  <PropertyGroup>
+    <RepoRoot>$(MSBuildThisFileDirectory)..\..\</RepoRoot>
+    <DlssRelDir>$(RepoRoot)third_party\sdk\dlss\lib\Windows_x86_64\rel\</DlssRelDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(RepoRoot)runtime\manifest.json" Link="runtime\manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(DlssRelDir)*.dll" Condition="Exists('$(DlssRelDir)')" Link="runtime\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(RepoRoot)third_party\sdk\community\**\*.dll" Link="runtime\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="$(EngineBinDir)blackvolt_engine.dll" Condition="Exists('$(EngineBinDir)blackvolt_engine.dll')">
       <Link>blackvolt_engine.dll</Link>

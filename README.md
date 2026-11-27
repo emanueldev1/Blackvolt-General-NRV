@@ -26,6 +26,9 @@ HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y 
 ## Compilar y ejecutar
 
 ```powershell
+# 0. SDK de NVIDIA y runtimes (una vez)
+./scripts/fetch-sdks.ps1
+
 # 1. Motor (C++)
 cmake --preset windows-x64
 cmake --build --preset debug
@@ -44,3 +47,8 @@ También puedes abrir `Blackvolt.sln` en Visual Studio después de compilar el m
 2. **Runtimes DLSS/NGX.** DLSS NR, DLSS-G, RTX VSR y TrueHDR, incluidos en cada Release y verificados por hash. Sin parches en memoria ni suplantar la GPU.
 3. **Motor y UI separados.** La app habla con el motor solo por la API en C.
 4. **Medir todo.** Cada etapa del pipeline reporta su tiempo; las estadísticas son parte del producto.
+
+## Licencia
+
+Blackvolt es software libre bajo la licencia **AGPL-3.0** (ver [LICENSE](LICENSE)).
+Los runtimes de NVIDIA incluidos en los Releases conservan sus propias licencias: ver [NOTICE.md](NOTICE.md).

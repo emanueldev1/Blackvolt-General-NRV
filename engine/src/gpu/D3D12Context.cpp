@@ -68,6 +68,11 @@ bool D3D12Context::isDeviceLost() const {
     return impl_ && impl_->device && FAILED(impl_->device->GetDeviceRemovedReason());
 }
 
+ID3D12Device* D3D12Context::device() const { return impl_->device.Get(); }
+IDXGIAdapter* D3D12Context::dxgiAdapter() const { return impl_->adapter.Get(); }
+ID3D12CommandQueue* D3D12Context::directQueue() const { return impl_->directQueue.Get(); }
+ID3D12CommandQueue* D3D12Context::computeQueue() const { return impl_->computeQueue.Get(); }
+
 #else
 
 struct D3D12Context::Impl {};
@@ -78,6 +83,10 @@ std::unique_ptr<D3D12Context> D3D12Context::create(const bv_adapter_info&, bv_re
 }
 
 bool D3D12Context::isDeviceLost() const { return false; }
+ID3D12Device* D3D12Context::device() const { return nullptr; }
+IDXGIAdapter* D3D12Context::dxgiAdapter() const { return nullptr; }
+ID3D12CommandQueue* D3D12Context::directQueue() const { return nullptr; }
+ID3D12CommandQueue* D3D12Context::computeQueue() const { return nullptr; }
 
 #endif
 

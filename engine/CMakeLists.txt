@@ -1,6 +1,27 @@
+include(FetchContent)
+FetchContent_Declare(nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+  URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(nlohmann_json)
+
+# NVIDIA DLSS SDK (headers + NGX static lib). Fetched by scripts/fetch-sdks.ps1 into
+# third_party/sdk/dlss; never committed. Without it the engine builds with NGX disabled.
+set(BV_DLSS_SDK_DIR "${PROJECT_SOURCE_DIR}/third_party/sdk/dlss" CACHE PATH "NVIDIA DLSS SDK root")
+set(BV_HAS_NGX OFF)
+if(WIN32 AND EXISTS "${BV_DLSS_SDK_DIR}/include/nvsdk_ngx.h")
+  set(BV_HAS_NGX ON)
+endif()
+message(STATUS "Blackvolt: NGX support ${BV_HAS_NGX} (SDK: ${BV_DLSS_SDK_DIR})")
+
 set(BV_ENGINE_SOURCES
   src/api.cpp
+  src/core/Engine.cpp
   src/core/Log.cpp
+  src/ngx/NgxRuntime.cpp
+  src/runtime/Catalog.cpp
+  src/runtime/Manifest.cpp
+  src/runtime/Sha256.cpp
   src/gpu/AdapterRanking.cpp
   src/gpu/Adapters.cpp
   src/gpu/D3D12Context.cpp
@@ -22,8 +43,18 @@ else()
   target_compile_options(blackvolt_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json)
+
 if(WIN32)
   target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid)
+endif()
+
+if(BV_HAS_NGX)
+  target_compile_definitions(blackvolt_core PUBLIC BV_HAS_NGX)
+  target_include_directories(blackvolt_core PRIVATE "${BV_DLSS_SDK_DIR}/include")
+  target_link_libraries(blackvolt_core PUBLIC
+    debug "${BV_DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d_dbg.lib"
+    optimized "${BV_DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib")
 endif()
 
 add_library(blackvolt_engine SHARED src/dll_main.cpp)

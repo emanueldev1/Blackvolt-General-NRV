@@ -33,6 +33,11 @@
         <NavigationViewItem Content="Reproductor" Tag="player" Icon="Play" />
         <NavigationViewItem Content="Captura" Tag="capture" Icon="Video" />
         <NavigationViewItem Content="Exportar" Tag="export" Icon="Save" />
+        <NavigationViewItem Content="Runtimes NVIDIA" Tag="runtimes">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE964;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
         <NavigationViewItem Content="Estadísticas" Tag="stats">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE9D2;" />

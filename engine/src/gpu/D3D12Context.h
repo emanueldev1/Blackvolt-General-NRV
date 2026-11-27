@@ -4,6 +4,10 @@
 
 #include <memory>
 
+struct ID3D12Device;
+struct IDXGIAdapter;
+struct ID3D12CommandQueue;
+
 namespace bv::gpu {
 
 // Owns the D3D12 device and the queues the pipeline submits to.
@@ -18,6 +22,12 @@ public:
 
     [[nodiscard]] const bv_adapter_info& adapter() const { return adapter_; }
     [[nodiscard]] bool isDeviceLost() const;
+
+    // Raw handles for SDKs that need them (NGX). Null on platforms without D3D12.
+    [[nodiscard]] ID3D12Device* device() const;
+    [[nodiscard]] IDXGIAdapter* dxgiAdapter() const;
+    [[nodiscard]] ID3D12CommandQueue* directQueue() const;
+    [[nodiscard]] ID3D12CommandQueue* computeQueue() const;
 
     struct Impl;
 

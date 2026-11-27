@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 1u
+#define BV_API_VERSION 2u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -83,6 +83,63 @@ typedef struct bv_stage_stats {
     double max_us;
 } bv_stage_stats;
 
+/* NVIDIA NGX features Blackvolt can drive. */
+typedef enum bv_feature {
+    BV_FEATURE_DLSS_SR = 0,      /* DLSS Super Resolution     nvngx_dlss.dll    */
+    BV_FEATURE_DLSS_RR = 1,      /* DLSS Ray Reconstruction   nvngx_dlssd.dll   */
+    BV_FEATURE_DLSS_FG = 2,      /* DLSS Frame Generation     nvngx_dlssg.dll   */
+    BV_FEATURE_DLSS_NR = 3,      /* DLSS Neural Rendering     nvngx_dlssnr.dll  */
+    BV_FEATURE_RTX_VSR = 4,      /* RTX Video Super Res.      nvngx_vsr.dll     */
+    BV_FEATURE_RTX_TRUEHDR = 5,  /* RTX Video TrueHDR         nvngx_truehdr.dll */
+    BV_FEATURE_COUNT = 6
+} bv_feature;
+
+typedef enum bv_runtime_state {
+    BV_RUNTIME_MISSING = 0,        /* DLL not found in any runtime folder */
+    BV_RUNTIME_FOUND = 1,          /* DLL present; GPU support not checked yet */
+    BV_RUNTIME_READY = 2,          /* DLL present and NGX reports the GPU supports it */
+    BV_RUNTIME_UNSUPPORTED_GPU = 3,
+    BV_RUNTIME_DRIVER_TOO_OLD = 4,
+    BV_RUNTIME_NGX_UNAVAILABLE = 5 /* engine built without NGX or NGX init failed */
+} bv_runtime_state;
+
+typedef enum bv_runtime_origin {
+    BV_ORIGIN_UNKNOWN = 0,         /* hash not in the manifest */
+    BV_ORIGIN_OFFICIAL = 1,        /* unmodified NVIDIA build */
+    BV_ORIGIN_COMMUNITY = 2        /* community-modified build */
+} bv_runtime_origin;
+
+typedef struct bv_runtime_status {
+    uint32_t size;                 /* = sizeof(bv_runtime_status) */
+    bv_feature feature;
+    bv_runtime_state state;
+    bv_runtime_origin origin;
+    char label[96];                /* e.g. "DLSS 310.9.16 (NVIDIA)", empty if missing */
+    char path[520];                /* UTF-8 absolute path of the DLL in use */
+} bv_runtime_status;
+
+/* Where runtime DLLs live. Must be called before bv_engine_create.
+ * bundled_dir: read-only folder shipped with the app (Release package).
+ * user_dir:    writable folder for imported runtimes (e.g. %LOCALAPPDATA%\Blackvolt\runtime).
+ * manifest:    path to runtime/manifest.json. */
+BV_API bv_result BV_CALL bv_set_runtime_paths(const char* bundled_dir, const char* user_dir, const char* manifest);
+
+/* Copies a runtime DLL into user_dir after checking it is the right file for the feature.
+ * out (optional) receives the resulting status. */
+BV_API bv_result BV_CALL bv_runtime_import(const char* source_path, bv_feature feature, bv_runtime_status* out);
+
+/* Searches a folder (e.g. a Veyra install) for runtime DLLs. Fills up to `capacity` paths
+ * (UTF-8, 520 bytes each) and the feature each one provides. */
+typedef struct bv_runtime_candidate {
+    uint32_t size;
+    bv_feature feature;
+    bv_runtime_origin origin;
+    char label[96];
+    char path[520];
+} bv_runtime_candidate;
+BV_API bv_result BV_CALL bv_runtime_scan(const char* folder, bv_runtime_candidate* out, uint32_t capacity,
+                                         uint32_t* count);
+
 typedef struct bv_engine bv_engine;
 
 typedef enum bv_log_level { BV_LOG_DEBUG = 0, BV_LOG_INFO, BV_LOG_WARN, BV_LOG_ERROR } bv_log_level;
@@ -99,6 +156,8 @@ BV_API bv_result BV_CALL bv_engine_create(uint32_t adapter_index, bv_engine** ou
 BV_API void BV_CALL bv_engine_destroy(bv_engine* engine);
 BV_API bv_result BV_CALL bv_engine_adapter(bv_engine* engine, bv_adapter_info* out);
 BV_API void BV_CALL bv_set_log_callback(bv_log_fn fn, void* user);
+
+BV_API bv_result BV_CALL bv_engine_runtime_status(bv_engine* engine, bv_feature feature, bv_runtime_status* out);
 
 /* Stage statistics by name: "decode", "enhance", "present", "frame" (end to end). */
 BV_API bv_result BV_CALL bv_engine_stage_stats(bv_engine* engine, const char* stage, bv_stage_stats* out);

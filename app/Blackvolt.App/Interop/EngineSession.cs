@@ -42,6 +42,13 @@ internal sealed class EngineSession : IDisposable
         return stats;
     }
 
+    public NativeEngine.RuntimeStatus GetRuntimeStatus(NativeEngine.Feature feature)
+    {
+        ObjectDisposedException.ThrowIf(_handle == 0, this);
+        NativeEngine.GetRuntimeStatus(_handle, feature, out var status).ThrowIfFailed();
+        return status;
+    }
+
     public void Dispose()
     {
         if (_handle != 0)
