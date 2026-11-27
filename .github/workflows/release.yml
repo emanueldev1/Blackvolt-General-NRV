@@ -1,0 +1,92 @@
+name: release
+
+# Push a tag like v0.2.0 to publish a release. The in-app updater downloads the
+# Blackvolt-<version>-win-x64.zip asset and checks it against the .sha256 next to it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        id: version
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+\.\d+') { throw "La etiqueta debe ser vX.Y.Z (es ${{ github.ref_name }})" }
+          "value=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Point VCPKG_ROOT at the runner's vcpkg
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg-cache" | Out-Null
+
+      - name: Restore vcpkg packages
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-v2-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-v2-
+
+      - name: Fetch NVIDIA SDK and runtimes
+        shell: pwsh
+        run: ./scripts/fetch-sdks.ps1
+
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: '3.12'
+
+      - name: Python tools for chiaki-ng's protocol code generator
+        shell: pwsh
+        run: '& "${{ steps.python.outputs.python-path }}" -m pip install --disable-pip-version-check protobuf grpcio-tools'
+
+      - name: Configure engine
+        run: cmake --preset windows-x64 "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+        timeout-minutes: 90
+
+      - name: Build engine (Release)
+        run: cmake --build --preset release
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Publish app
+        run: >
+          msbuild app/Blackvolt.App/Blackvolt.App.csproj /restore /t:Publish
+          /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=true
+          /p:Version=${{ steps.version.outputs.value }} /p:PublishDir=${{ github.workspace }}\publish\Blackvolt\
+          /v:minimal
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $name = "Blackvolt-${{ steps.version.outputs.value }}-win-x64.zip"
+          Copy-Item LICENSE, NOTICE.md publish/Blackvolt/
+          if (-not (Test-Path publish/Blackvolt/Blackvolt.exe)) { throw "Falta Blackvolt.exe en el paquete" }
+          Compress-Archive -Path publish/Blackvolt -DestinationPath $name -CompressionLevel Optimal
+          $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Out-File "$name.sha256" -Encoding ascii -NoNewline
+          "zip=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" "${{ steps.package.outputs.zip }}" "${{ steps.package.outputs.zip }}.sha256" `
+            --title "Blackvolt ${{ steps.version.outputs.value }}" --generate-notes

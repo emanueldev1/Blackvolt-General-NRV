@@ -38,6 +38,7 @@ public partial class App : Application
             Engine?.Dispose();
         };
         MainWindow.Activate();
+        _ = Services.Updater.CheckInBackgroundAsync();
     }
 
     /// <summary>

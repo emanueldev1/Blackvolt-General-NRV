@@ -11,6 +11,12 @@
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       </StackPanel>
 
+      <InfoBar x:Name="UpdateBar" Severity="Success" IsOpen="False" Title="Hay una nueva versión de Blackvolt">
+        <InfoBar.ActionButton>
+          <Button Content="Ver e instalar" Click="OnOpenUpdate" Style="{StaticResource AccentButtonStyle}" />
+        </InfoBar.ActionButton>
+      </InfoBar>
+
       <InfoBar x:Name="EngineErrorBar" Severity="Error" IsOpen="False" IsClosable="False"
                Title="El motor no pudo iniciar" />
 

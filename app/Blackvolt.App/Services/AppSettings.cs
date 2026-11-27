@@ -9,6 +9,7 @@ internal sealed class AppSettings
     public VideoSettings Video { get; set; } = new();
     public CaptureSettings Capture { get; set; } = new();
     public ExportSettings Export { get; set; } = new();
+    public UpdateSettings Update { get; set; } = new();
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Blackvolt", "settings.json");
@@ -98,4 +99,12 @@ internal sealed class ExportSettings
     public int Quality { get; set; } = 70;       // 0..100
     public bool Audio { get; set; } = true;
     public string Container { get; set; } = ".mp4";
+}
+
+/// <summary>Automatic update checks against GitHub Releases.</summary>
+internal sealed class UpdateSettings
+{
+    public bool AutoCheck { get; set; } = true;
+    public DateTime LastCheckUtc { get; set; }
+    public string SkippedTag { get; set; } = "";
 }

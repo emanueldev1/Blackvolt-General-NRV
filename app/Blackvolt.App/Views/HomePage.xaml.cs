@@ -22,7 +22,21 @@ public sealed partial class HomePage : Page
     {
         InitializeComponent();
         Show(App.Engine?.Adapter, App.EngineError);
+        if (Services.Updater.Available is { } update) ShowUpdate(update);
+        Services.Updater.Found += OnUpdateFound;
+        Unloaded += (_, _) => Services.Updater.Found -= OnUpdateFound;
     }
+
+    private void OnUpdateFound(Services.UpdateInfo info) => DispatcherQueue.TryEnqueue(() => ShowUpdate(info));
+
+    private void ShowUpdate(Services.UpdateInfo info)
+    {
+        if (info.Tag == Services.AppSettings.Current.Update.SkippedTag) return;
+        UpdateBar.Message = $"Versión {info.Version} disponible (tienes la {Services.Updater.CurrentVersion}).";
+        UpdateBar.IsOpen = true;
+    }
+
+    private void OnOpenUpdate(object sender, RoutedEventArgs e) => App.MainWindow?.Go("settings");
 
     private void OnQuickAction(object sender, RoutedEventArgs e)
     {

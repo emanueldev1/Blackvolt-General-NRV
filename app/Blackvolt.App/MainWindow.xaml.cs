@@ -38,6 +38,11 @@ public sealed partial class MainWindow : Window
     /// <summary>Selects a section of the navigation pane by its tag, as if the user clicked it.</summary>
     internal void Go(string tag)
     {
+        if (tag == "settings")
+        {
+            Nav.SelectedItem = Nav.SettingsItem;
+            return;
+        }
         var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == tag);
         if (item is not null) Nav.SelectedItem = item;
         else if (Pages.TryGetValue(tag, out var page)) ContentFrame.Navigate(page);

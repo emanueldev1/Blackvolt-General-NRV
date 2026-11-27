@@ -22,6 +22,7 @@ app rápida y limpia.
   hay GPU compatible), escalado Lanczos y audio copiado sin pérdidas.
 - **Estadísticas**: tiempos por etapa (decodificación, latencia, GPU por cada mejora), fotogramas
   perdidos y recuperados, bitrate, RTT, y un **historial de sesiones** con su resumen.
+- **Actualizaciones automáticas** desde los Releases de GitHub, con verificación SHA-256.
 
 ## Qué hay en el repo
 
@@ -57,6 +58,13 @@ dotnet run --project app/Blackvolt.App -c Debug
 ```
 
 También puedes abrir `Blackvolt.sln` en Visual Studio después de compilar el motor.
+
+## Publicar una versión
+
+Sube una etiqueta `vX.Y.Z` (por ejemplo `git tag v0.2.0 && git push origin v0.2.0`). El workflow
+`release` compila el motor y la app en Release, crea `Blackvolt-X.Y.Z-win-x64.zip` con su `.sha256`
+y publica el Release en GitHub. La app instalada lo detecta al iniciar (o desde Ajustes ›
+Actualizaciones), lo descarga, comprueba el SHA-256 y se reinicia ya actualizada.
 
 ## Principios
 
