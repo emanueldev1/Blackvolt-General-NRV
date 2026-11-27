@@ -1,0 +1,17 @@
+# CMake 4 removed FindPythonInterp; chiaki-ng still calls find_package(PythonInterp 3).
+# Answer it from FindPython3 so the rest of its build sees PYTHON_EXECUTABLE as before.
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}" CACHE FILEPATH "" FORCE)
+  set(PYTHON_VERSION_STRING "${Python3_VERSION}")
+  set(PYTHON_VERSION_MAJOR "${Python3_VERSION_MAJOR}")
+  set(PYTHON_VERSION_MINOR "${Python3_VERSION_MINOR}")
+  set(PYTHONINTERP_FOUND TRUE)
+  set(PythonInterp_FOUND TRUE)
+else()
+  set(PYTHONINTERP_FOUND FALSE)
+  set(PythonInterp_FOUND FALSE)
+  if(PythonInterp_FIND_REQUIRED)
+    message(FATAL_ERROR "Se necesita Python 3 para generar el código de protocolo de chiaki-ng")
+  endif()
+endif()

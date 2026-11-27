@@ -23,6 +23,7 @@ FetchContent_Declare(chiaki_ng
 # Python runs nanopb's generator (and protoc via grpcio-tools when no protoc is installed).
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}" CACHE FILEPATH "" FORCE)
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/compat") # FindPythonInterp shim for CMake 4
 
 # Only the protocol library: no GUI, CLI, decoders or extras.
 foreach(opt GUI CLI TESTS ANDROID BOREALIS STEAM_SHORTCUT)
