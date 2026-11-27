@@ -14,8 +14,10 @@ FetchContent_Declare(chiaki_ng
   GIT_SUBMODULES third-party/curl third-party/gf-complete third-party/jerasure third-party/nanopb
   GIT_SUBMODULES_RECURSE OFF
   GIT_PROGRESS OFF
+  # Keep upstream line endings: the patches are LF and Windows runners default to autocrlf=true.
+  GIT_CONFIG core.autocrlf=false core.eol=lf
   UPDATE_DISCONNECTED ON
-  PATCH_COMMAND "${GIT_EXECUTABLE}" -c core.autocrlf=false apply --whitespace=nowarn ${BV_CHIAKI_PATCHES}
+  PATCH_COMMAND "${GIT_EXECUTABLE}" -c core.autocrlf=false apply --ignore-whitespace --whitespace=nowarn ${BV_CHIAKI_PATCHES}
   EXCLUDE_FROM_ALL)
 
 # Python runs nanopb's generator (and protoc via grpcio-tools when no protoc is installed).
