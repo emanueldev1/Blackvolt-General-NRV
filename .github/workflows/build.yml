@@ -24,8 +24,10 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - uses: microsoft/setup-msbuild@v2
+
       - name: Build app
-        run: dotnet build app/Blackvolt.App -c Debug -p:Platform=x64
+        run: msbuild app/Blackvolt.App/Blackvolt.App.csproj /restore /p:Configuration=Debug /p:Platform=x64 /v:minimal
 
       - name: Show XAML compiler output
         if: failure()
