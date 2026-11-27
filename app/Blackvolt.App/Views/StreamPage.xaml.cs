@@ -23,6 +23,7 @@ public sealed partial class StreamPage : Page
     private readonly HashSet<VirtualKey> _keys = [];
     private RemoteStream? _stream;
     private StreamRequest? _request;
+    private SessionTracker? _session;
     private DateTime _lastPointerMove = DateTime.UtcNow;
     private StreamState _lastState = StreamState.Idle;
 
@@ -67,6 +68,8 @@ public sealed partial class StreamPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _timer.Stop();
+        _session?.Finish();
+        _session = null;
         _stream?.Dispose(); // stops the session, threads and audio
         _stream = null;
         SetFullscreen(false);
@@ -92,6 +95,8 @@ public sealed partial class StreamPage : Page
         });
         _lastState = StreamState.Idle;
         ShowStatus("Conectando…", "");
+        _session?.Finish();
+        _session = new SessionTracker("Remote Play", _request.Nickname);
     }
 
     private void Tick()
@@ -134,6 +139,9 @@ public sealed partial class StreamPage : Page
             var extras = (enhance.Flags.HasFlag(NativeEnhance.Flags.VsrActive) ? " · RTX VSR" : "") +
                          (enhance.Flags.HasFlag(NativeEnhance.Flags.HdrActive) ? " · HDR" : "");
             QualityText.Text = $"{info.Height}p · {info.CodecText} · {info.BitrateMbps:0.0} Mbps{extras}";
+            var p99 = App.Engine?.GetStats("stream.latency") is { Samples: > 0 } lat ? lat.P99Us / 1000.0 : 0;
+            _session?.Sample(info.Width, info.Height, info.FramesPresented, info.FramesLost, p99,
+                             $"{info.CodecText} · {info.BitrateMbps:0.0} Mbps · RTT {info.RttMs:0} ms{extras}");
         }
         PadText.Text = info.GamepadConnected != 0 ? info.GamepadText : "Sin mando (usa el teclado)";
 

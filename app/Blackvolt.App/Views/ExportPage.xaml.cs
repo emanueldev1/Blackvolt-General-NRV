@@ -17,6 +17,7 @@ public sealed partial class ExportPage : Page
     private static NativeExport.Job? _job;
     private static string _input = "";
     private static string _output = "";
+    private static bool _recorded;
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
@@ -119,6 +120,7 @@ public sealed partial class ExportPage : Page
 
         _job?.Dispose();
         _job = null;
+        _recorded = false;
         Notice.IsOpen = false;
         try
         {
@@ -183,6 +185,22 @@ public sealed partial class ExportPage : Page
         if (finished)
         {
             _timer.Stop();
+            if (s.State == ExportState.Done && !_recorded)
+            {
+                _recorded = true;
+                Services.SessionHistory.Add(new Services.SessionRecord
+                {
+                    Kind = "Exportar",
+                    Title = Path.GetFileName(_output),
+                    StartedUtc = DateTime.UtcNow.AddSeconds(-s.ElapsedS),
+                    DurationS = s.ElapsedS,
+                    Width = s.Width,
+                    Height = s.Height,
+                    AvgFps = s.Fps,
+                    Presented = s.Frames,
+                    Detail = $"{Pretty(encoder)} · {(s.Hardware != 0 ? "GPU" : "CPU")}",
+                });
+            }
             StartButton.IsEnabled = _input.Length > 0;
         }
     }

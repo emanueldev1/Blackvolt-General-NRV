@@ -22,6 +22,7 @@ public sealed partial class PlayerPage : Page
     private readonly EnhancePanel _enhance = new();
     private bool _scrubbing;
     private bool _updatingTimeline;
+    private SessionTracker? _session;
     private DateTime _lastPointerMove = DateTime.UtcNow;
 
     public PlayerPage()
@@ -56,6 +57,8 @@ public sealed partial class PlayerPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _timer.Stop();
+        _session?.Finish();
+        _session = null;
         _player?.Dispose();
         _player = null;
     }
@@ -66,8 +69,10 @@ public sealed partial class PlayerPage : Page
         ErrorBar.IsOpen = false;
         try
         {
+            _session?.Finish();
             _player.Open(url);
             _player.Play();
+            _session = new SessionTracker(url.StartsWith("capture:", StringComparison.Ordinal) ? "Captura" : "Reproductor", title);
         }
         catch (EngineException ex)
         {
@@ -83,7 +88,9 @@ public sealed partial class PlayerPage : Page
     {
         if (_player is null) return;
         ErrorBar.IsOpen = false;
+        _session?.Finish();
         _player.Open(path);
+        _session = new SessionTracker("Reproductor", Path.GetFileName(path));
         SourceText.Text = Path.GetFileName(path);
         EmptyState.Visibility = Visibility.Collapsed;
         Transport.Visibility = Visibility.Visible;
@@ -125,7 +132,21 @@ public sealed partial class PlayerPage : Page
 
         var enhance = _player.EnhanceStatus;
         _enhance.ShowStatus(enhance);
+        if (info.State == State.Playing && _session is not null)
+        {
+            var p99 = App.Engine?.GetStats("frame") is { Samples: > 0 } fs ? fs.P99Us / 1000.0 : 0;
+            _session.Sample(info.Width, info.Height, info.FramesPresented, info.FramesDropped, p99,
+                            SessionDetail(info, enhance));
+        }
         if (StatsPanel.Visibility == Visibility.Visible) UpdateStats(info, enhance);
+    }
+
+    private static string SessionDetail(in NativeEngine.PlayerInfo info, in NativeEnhance.Status enhance)
+    {
+        var parts = new List<string> { info.CodecText, info.HardwareDecode != 0 ? "GPU" : "CPU" };
+        if (enhance.Flags.HasFlag(NativeEnhance.Flags.VsrActive)) parts.Add($"VSR → {enhance.OutputHeight}p");
+        if (enhance.Flags.HasFlag(NativeEnhance.Flags.HdrActive)) parts.Add("TrueHDR");
+        return string.Join(" · ", parts.Where(x => x.Length > 0));
     }
 
     private void UpdateStats(NativeEngine.PlayerInfo info, in NativeEnhance.Status enhance)
