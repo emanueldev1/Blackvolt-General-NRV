@@ -1,7 +1,7 @@
 namespace Blackvolt.App.Interop;
 
 /// <summary>Owns one native engine instance. Dispose to release the GPU device.</summary>
-public sealed class EngineSession : IDisposable
+internal sealed class EngineSession : IDisposable
 {
     private nint _handle;
 
@@ -52,7 +52,7 @@ public sealed class EngineSession : IDisposable
     }
 }
 
-public sealed record GpuAdapter(
+internal sealed record GpuAdapter(
     uint Index,
     string Name,
     NativeEngine.Vendor Vendor,
@@ -67,7 +67,7 @@ public sealed record GpuAdapter(
         new(i.Index, i.NameText, i.Vendor, i.DedicatedVramBytes, i.DriverText, i.Capabilities);
 }
 
-public sealed class EngineException(string message) : Exception(message);
+internal sealed class EngineException(string message) : Exception(message);
 
 internal static class ResultExtensions
 {

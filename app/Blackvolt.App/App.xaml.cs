@@ -13,7 +13,7 @@ public partial class App : Application
     }
 
     /// <summary>Engine session shared by all pages. Null when no compatible GPU was found.</summary>
-    public static EngineSession? Engine { get; private set; }
+    internal static EngineSession? Engine { get; private set; }
 
     /// <summary>Reason the engine could not start, shown on the home page.</summary>
     public static string? EngineError { get; private set; }
