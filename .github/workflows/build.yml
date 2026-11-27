@@ -8,8 +8,23 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v4
+
+      - name: Point VCPKG_ROOT at the runner's vcpkg
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg-cache" | Out-Null
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
 
       - name: Fetch NVIDIA SDK and runtimes
         shell: pwsh
@@ -17,6 +32,7 @@ jobs:
 
       - name: Configure engine
         run: cmake --preset windows-x64
+        timeout-minutes: 90
 
       - name: Build engine
         run: cmake --build --preset debug

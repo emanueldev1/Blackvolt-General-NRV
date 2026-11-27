@@ -1,6 +1,7 @@
 #include "blackvolt/bv_api.h"
 
 #include "core/Engine.h"
+#include "core/EngineHandle.h"
 #include "core/Log.h"
 #include "gpu/AdapterRanking.h"
 #include "gpu/Adapters.h"
@@ -14,11 +15,7 @@
 #include <exception>
 #include <new>
 
-struct bv_engine {
-    bv_engine(std::unique_ptr<bv::gpu::D3D12Context> gpu, bv::runtime::RuntimePaths paths)
-        : engine(std::move(gpu), std::move(paths)) {}
-    bv::Engine engine;
-};
+
 
 namespace {
 

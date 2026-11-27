@@ -14,10 +14,31 @@ if(WIN32 AND EXISTS "${BV_DLSS_SDK_DIR}/include/nvsdk_ngx.h")
 endif()
 message(STATUS "Blackvolt: NGX support ${BV_HAS_NGX} (SDK: ${BV_DLSS_SDK_DIR})")
 
+# FFmpeg: vcpkg on Windows (find_package wrapper), pkg-config elsewhere.
+find_package(FFMPEG QUIET)
+if(FFMPEG_FOUND)
+  add_library(bv_ffmpeg INTERFACE)
+  target_include_directories(bv_ffmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
+  target_link_directories(bv_ffmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
+  target_link_libraries(bv_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
+else()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(BV_FF REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswresample libswscale)
+  add_library(bv_ffmpeg INTERFACE)
+  target_link_libraries(bv_ffmpeg INTERFACE PkgConfig::BV_FF)
+endif()
+
 set(BV_ENGINE_SOURCES
   src/api.cpp
+  src/player_api.cpp
+  src/audio/WasapiSink.cpp
+  src/render/D3D12Presenter.cpp
   src/core/Engine.cpp
   src/core/Log.cpp
+  src/media/AudioDecoder.cpp
+  src/media/Demuxer.cpp
+  src/media/VideoDecoder.cpp
+  src/player/Player.cpp
   src/ngx/NgxRuntime.cpp
   src/runtime/Catalog.cpp
   src/runtime/Manifest.cpp
@@ -43,10 +64,10 @@ else()
   target_compile_options(blackvolt_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json bv_ffmpeg)
 
 if(WIN32)
-  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid)
+  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32)
 endif()
 
 if(BV_HAS_NGX)

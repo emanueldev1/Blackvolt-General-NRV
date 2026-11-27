@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 2u
+#define BV_API_VERSION 3u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -161,6 +161,49 @@ BV_API bv_result BV_CALL bv_engine_runtime_status(bv_engine* engine, bv_feature 
 
 /* Stage statistics by name: "decode", "enhance", "present", "frame" (end to end). */
 BV_API bv_result BV_CALL bv_engine_stage_stats(bv_engine* engine, const char* stage, bv_stage_stats* out);
+
+/* ------------------------------------------------------------------------------------------
+ * Player
+ * ---------------------------------------------------------------------------------------- */
+typedef struct bv_player bv_player;
+
+typedef enum bv_player_state {
+    BV_PLAYER_IDLE = 0,
+    BV_PLAYER_OPENING = 1,
+    BV_PLAYER_PLAYING = 2,
+    BV_PLAYER_PAUSED = 3,
+    BV_PLAYER_ENDED = 4,
+    BV_PLAYER_ERROR = 5
+} bv_player_state;
+
+typedef struct bv_player_info {
+    uint32_t size;                 /* = sizeof(bv_player_info) */
+    bv_player_state state;
+    double position_s;
+    double duration_s;
+    uint32_t width;
+    uint32_t height;
+    double fps;
+    uint32_t hardware_decode;      /* 1 = D3D12 Video decode */
+    uint32_t has_audio;
+    uint64_t frames_presented;
+    uint64_t frames_dropped;
+    char codec[32];
+    char error[256];
+} bv_player_info;
+
+/* The player renders into a composition swapchain; attach it to a SwapChainPanel. */
+BV_API bv_result BV_CALL bv_player_create(bv_engine* engine, bv_player** out_player);
+BV_API void BV_CALL bv_player_destroy(bv_player* player);
+BV_API bv_result BV_CALL bv_player_swapchain(bv_player* player, void** out_swapchain); /* IDXGISwapChain1*, not AddRef'd */
+/* width/height in physical pixels; scale = panel CompositionScale (DPI), applied as the swapchain transform. */
+BV_API bv_result BV_CALL bv_player_resize(bv_player* player, uint32_t width, uint32_t height, float scale_x, float scale_y);
+BV_API bv_result BV_CALL bv_player_open(bv_player* player, const char* url);
+BV_API bv_result BV_CALL bv_player_play(bv_player* player);
+BV_API bv_result BV_CALL bv_player_pause(bv_player* player);
+BV_API bv_result BV_CALL bv_player_seek(bv_player* player, double seconds);
+BV_API bv_result BV_CALL bv_player_set_volume(bv_player* player, float volume); /* 0..2 */
+BV_API bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out);
 
 #ifdef __cplusplus
 }

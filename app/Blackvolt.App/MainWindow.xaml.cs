@@ -10,7 +10,7 @@ public sealed partial class MainWindow : Window
     private static readonly Dictionary<string, Type> Pages = new()
     {
         ["home"] = typeof(HomePage),
-        ["player"] = typeof(ComingSoonPage),
+        ["player"] = typeof(PlayerPage),
         ["capture"] = typeof(ComingSoonPage),
         ["export"] = typeof(ComingSoonPage),
         ["runtimes"] = typeof(RuntimesPage),

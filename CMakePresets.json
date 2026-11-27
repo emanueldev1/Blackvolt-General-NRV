@@ -6,14 +6,37 @@
       "displayName": "Windows x64 (newest Visual Studio installed)",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/engine",
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "debug", "configurePreset": "windows-x64", "configuration": "Debug" },
-    { "name": "release", "configurePreset": "windows-x64", "configuration": "Release" }
+    {
+      "name": "debug",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "windows-x64",
+      "configuration": "Release"
+    }
   ],
   "testPresets": [
-    { "name": "debug", "configurePreset": "windows-x64", "configuration": "Debug", "output": { "outputOnFailure": true } }
+    {
+      "name": "debug",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

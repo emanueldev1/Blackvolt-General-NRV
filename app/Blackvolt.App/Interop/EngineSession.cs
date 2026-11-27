@@ -49,6 +49,8 @@ internal sealed class EngineSession : IDisposable
         return status;
     }
 
+    internal nint Handle => _handle;
+
     public void Dispose()
     {
         if (_handle != 0)

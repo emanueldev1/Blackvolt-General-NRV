@@ -19,7 +19,7 @@ HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y 
 
 - Windows 10 21H2+ o Windows 11, x64.
 - Visual Studio 2022 o más nuevo, con las cargas **Desarrollo de escritorio con C++** y **Desarrollo de aplicaciones de WinUI / .NET**.
-- CMake 3.26+ (viene con Visual Studio).
+- CMake 3.26+ y vcpkg (ambos vienen con Visual Studio; abre la "Developer PowerShell" para tener `VCPKG_ROOT`).
 - .NET 9 SDK.
 - GPU con DirectX 12. Para RTX Video, una NVIDIA GeForce RTX 20 o superior con driver reciente.
 

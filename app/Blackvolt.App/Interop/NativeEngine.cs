@@ -6,7 +6,7 @@ namespace Blackvolt.App.Interop;
 internal static partial class NativeEngine
 {
     private const string Dll = "blackvolt_engine";
-    public const uint ApiVersion = 2;
+    public const uint ApiVersion = 3;
     public const uint BestAdapter = uint.MaxValue;
 
     public enum Result : int
@@ -126,6 +126,59 @@ internal static partial class NativeEngine
 
     [LibraryImport(Dll, EntryPoint = "bv_engine_runtime_status")]
     public static partial Result GetRuntimeStatus(nint engine, Feature feature, out RuntimeStatus status);
+
+    public enum PlayerState : int { Idle = 0, Opening = 1, Playing = 2, Paused = 3, Ended = 4, Error = 5 }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct PlayerInfo
+    {
+        public uint Size;
+        public PlayerState State;
+        public double PositionS;
+        public double DurationS;
+        public uint Width;
+        public uint Height;
+        public double Fps;
+        public uint HardwareDecode;
+        public uint HasAudio;
+        public ulong FramesPresented;
+        public ulong FramesDropped;
+        public fixed byte Codec[32];
+        public fixed byte Error[256];
+
+        public readonly string CodecText { get { fixed (byte* p = Codec) return Utf8.Read(p, 32); } }
+        public readonly string ErrorText { get { fixed (byte* p = Error) return Utf8.Read(p, 256); } }
+    }
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_create")]
+    public static partial Result PlayerCreate(nint engine, out nint player);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_destroy")]
+    public static partial void PlayerDestroy(nint player);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_swapchain")]
+    public static partial Result PlayerSwapChain(nint player, out nint swapChain);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_resize")]
+    public static partial Result PlayerResize(nint player, uint width, uint height, float scaleX, float scaleY);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_open", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial Result PlayerOpen(nint player, string url);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_play")]
+    public static partial Result PlayerPlay(nint player);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_pause")]
+    public static partial Result PlayerPause(nint player);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_seek")]
+    public static partial Result PlayerSeek(nint player, double seconds);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_set_volume")]
+    public static partial Result PlayerSetVolume(nint player, float volume);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_info_get")]
+    public static partial Result PlayerInfoGet(nint player, out PlayerInfo info);
 
     [LibraryImport(Dll, EntryPoint = "bv_api_version")]
     public static partial uint GetApiVersion();
