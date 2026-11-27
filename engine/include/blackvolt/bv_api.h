@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 3u
+#define BV_API_VERSION 4u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -204,6 +204,143 @@ BV_API bv_result BV_CALL bv_player_pause(bv_player* player);
 BV_API bv_result BV_CALL bv_player_seek(bv_player* player, double seconds);
 BV_API bv_result BV_CALL bv_player_set_volume(bv_player* player, float volume); /* 0..2 */
 BV_API bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out);
+
+/* ---------------------------------------------------------------------------
+ * PlayStation Remote Play (PS5 / PS4)
+ * ------------------------------------------------------------------------ */
+
+typedef struct bv_consoles bv_consoles;   /* paired consoles, stored encrypted (DPAPI) */
+typedef struct bv_discovery bv_discovery;
+typedef struct bv_pairing bv_pairing;
+typedef struct bv_stream bv_stream;
+
+typedef enum bv_console_kind { BV_CONSOLE_PS4 = 0, BV_CONSOLE_PS5 = 1 } bv_console_kind;
+
+typedef struct bv_console_info {
+    uint32_t size;
+    char nickname[64];
+    char host[64];          /* last known address, may be empty */
+    char console_id[16];    /* MAC as 12 hex digits, empty if unknown */
+    uint32_t kind;          /* bv_console_kind */
+    char source[16];        /* "blackvolt", "veyra", "chiaki-ng" */
+    uint32_t has_account_id;
+    uint32_t pref_width, pref_height, pref_fps, pref_bitrate_kbps, pref_codec; /* 0 when unknown */
+} bv_console_info;
+
+/* Opens (or creates) the console store. A missing file is an empty store. */
+BV_API bv_result BV_CALL bv_consoles_open(const char* path, bv_consoles** out);
+BV_API void BV_CALL bv_consoles_close(bv_consoles* consoles);
+BV_API uint32_t BV_CALL bv_consoles_count(bv_consoles* consoles);
+BV_API bv_result BV_CALL bv_consoles_get(bv_consoles* consoles, uint32_t index, bv_console_info* out);
+BV_API bv_result BV_CALL bv_consoles_remove(bv_consoles* consoles, uint32_t index);
+/* NULL leaves a field unchanged. */
+BV_API bv_result BV_CALL bv_consoles_update(bv_consoles* consoles, uint32_t index, const char* nickname, const char* host);
+/* Pairings saved by chiaki-ng (registry) and Veyra on this PC. */
+BV_API bv_result BV_CALL bv_consoles_import_installed(bv_consoles* consoles, uint32_t* added);
+/* A chiaki-ng settings export (.ini) or a folder with Veyra .dat files. */
+BV_API bv_result BV_CALL bv_consoles_import_path(bv_consoles* consoles, const char* path, uint32_t* added);
+BV_API bv_result BV_CALL bv_consoles_wake(bv_consoles* consoles, uint32_t index, char* error, uint32_t error_size);
+
+typedef enum bv_discovered_state {
+    BV_DISCOVERED_UNKNOWN = 0,
+    BV_DISCOVERED_READY = 1,
+    BV_DISCOVERED_STANDBY = 2
+} bv_discovered_state;
+
+typedef struct bv_discovered_console {
+    uint32_t size;
+    char name[64];
+    char host[64];
+    char console_id[16];
+    uint32_t kind;          /* bv_console_kind */
+    uint32_t state;         /* bv_discovered_state */
+    char running_app[96];
+    char system_version[32];
+    int32_t paired_index;   /* index in the store, or -1 */
+} bv_discovered_console;
+
+/* known: optional; its consoles are also pinged directly (other subnets, VPN). */
+BV_API bv_result BV_CALL bv_discovery_start(bv_consoles* known, bv_discovery** out);
+BV_API void BV_CALL bv_discovery_stop(bv_discovery* discovery);
+BV_API bv_result BV_CALL bv_discovery_list(bv_discovery* discovery, bv_discovered_console* items, uint32_t capacity,
+                                           uint32_t* count);
+
+typedef enum bv_pairing_state {
+    BV_PAIRING_RUNNING = 0,
+    BV_PAIRING_SUCCEEDED = 1,
+    BV_PAIRING_FAILED = 2,
+    BV_PAIRING_CANCELED = 3
+} bv_pairing_state;
+
+/* account_id: base64 (as chiaki-ng shows it), 16 hex digits or the decimal id; NULL/empty reuses
+ * the account of an already paired console. pin: the 8 digits shown on the console. */
+BV_API bv_result BV_CALL bv_pairing_start(bv_consoles* consoles, const char* host, uint32_t kind,
+                                          const char* account_id, uint32_t pin, bv_pairing** out);
+/* On success the console is added to the store (and saved) once. */
+BV_API bv_result BV_CALL bv_pairing_poll(bv_pairing* pairing, uint32_t* state, char* error, uint32_t error_size);
+BV_API void BV_CALL bv_pairing_destroy(bv_pairing* pairing);
+
+typedef struct bv_stream_settings {
+    uint32_t size;
+    uint32_t width, height;     /* 640x360, 960x540, 1280x720, 1920x1080 */
+    uint32_t fps;               /* 30 / 60 */
+    uint32_t bitrate_kbps;      /* 0 = default for the resolution */
+    uint32_t codec;             /* 0 H.264, 1 HEVC, 2 HEVC HDR */
+    uint32_t auto_reconnect;
+    uint32_t wake_if_asleep;
+    uint32_t dualsense_features;
+} bv_stream_settings;
+
+typedef enum bv_stream_state {
+    BV_STREAM_IDLE = 0,
+    BV_STREAM_WAKING = 1,
+    BV_STREAM_CONNECTING = 2,
+    BV_STREAM_STREAMING = 3,
+    BV_STREAM_RECONNECTING = 4,
+    BV_STREAM_ENDED = 5,
+    BV_STREAM_ERROR = 6
+} bv_stream_state;
+
+typedef struct bv_stream_info {
+    uint32_t size;
+    uint32_t state;             /* bv_stream_state */
+    uint32_t width, height;
+    double fps;
+    double bitrate_mbps;
+    double rtt_ms;
+    double decode_ms;
+    uint64_t frames_presented;
+    uint64_t frames_lost;
+    uint64_t frames_recovered;
+    uint32_t reconnects;
+    uint32_t hardware_decode;
+    uint32_t gamepad_connected;
+    char gamepad[64];
+    char codec[32];
+    char error[256];
+} bv_stream_info;
+
+typedef struct bv_gamepad_state {
+    uint32_t size;
+    uint32_t buttons;           /* cross=1<<0 moon=1<<1 box=1<<2 pyramid=1<<3 left right up down
+                                   l1 r1 l3 r3 options share touchpad ps (1<<15) */
+    uint8_t l2, r2;
+    int16_t left_x, left_y, right_x, right_y;
+} bv_gamepad_state;
+
+BV_API bv_result BV_CALL bv_stream_create(bv_engine* engine, bv_stream** out);
+BV_API void BV_CALL bv_stream_destroy(bv_stream* stream);
+BV_API bv_result BV_CALL bv_stream_swapchain(bv_stream* stream, void** out_swapchain);
+BV_API bv_result BV_CALL bv_stream_resize(bv_stream* stream, uint32_t width, uint32_t height, float scale_x, float scale_y);
+BV_API bv_result BV_CALL bv_stream_start(bv_stream* stream, bv_consoles* consoles, uint32_t index,
+                                         const bv_stream_settings* settings);
+BV_API bv_result BV_CALL bv_stream_stop(bv_stream* stream);
+BV_API bv_result BV_CALL bv_stream_info_get(bv_stream* stream, bv_stream_info* out);
+BV_API bv_result BV_CALL bv_stream_set_volume(bv_stream* stream, float volume); /* 0..1 */
+/* Keyboard/mouse mapped input, merged with the physical gamepad. */
+BV_API bv_result BV_CALL bv_stream_set_input(bv_stream* stream, const bv_gamepad_state* state);
+BV_API bv_result BV_CALL bv_stream_ps_button(bv_stream* stream);
+BV_API bv_result BV_CALL bv_stream_console_sleep(bv_stream* stream);
 
 #ifdef __cplusplus
 }

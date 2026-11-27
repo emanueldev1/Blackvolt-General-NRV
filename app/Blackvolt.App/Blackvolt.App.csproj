@@ -41,9 +41,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="$(EngineBinDir)blackvolt_engine.dll" Condition="Exists('$(EngineBinDir)blackvolt_engine.dll')">
-      <Link>blackvolt_engine.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- The engine and everything it loads (FFmpeg, OpenSSL, Opus, SDL3...), placed there by vcpkg. -->
+    <None Include="$(EngineBinDir)*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

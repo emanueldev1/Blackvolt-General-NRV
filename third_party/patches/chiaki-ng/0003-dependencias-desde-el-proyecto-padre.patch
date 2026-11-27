@@ -1,0 +1,35 @@
+diff --git a/lib/CMakeLists.txt b/lib/CMakeLists.txt
+index ba0a79b..400e985 100644
+--- a/lib/CMakeLists.txt
++++ b/lib/CMakeLists.txt
+@@ -147,7 +147,10 @@ target_include_directories(chiaki-lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/includ
+ find_package(Threads REQUIRED)
+ target_link_libraries(chiaki-lib Threads::Threads)
+ 
+-if(CHIAKI_LIB_JSONC_EXTERNAL_PROJECT)
++if(CHIAKI_DEPS_FROM_PARENT)
++	# Blackvolt: json-c, miniupnpc and libevent are resolved by the parent project.
++	target_link_libraries(chiaki-lib ${CHIAKI_PARENT_DEPS})
++elseif(CHIAKI_LIB_JSONC_EXTERNAL_PROJECT)
+ 	target_link_libraries(chiaki-lib json-c)
+ 	target_include_directories(chiaki-lib PRIVATE "${JSONC_PREFIX_INCLUDE_DIR}")
+ 	target_include_directories(chiaki-lib PRIVATE "${json-c_BINARY_DIR}")
+@@ -162,7 +165,8 @@ else()
+ 	target_link_libraries(chiaki-lib PkgConfig::json-c)
+ endif()
+ 
+-if(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT)
++if(CHIAKI_DEPS_FROM_PARENT)
++elseif(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT)
+ 	target_link_libraries(chiaki-lib libminiupnpc-static)
+ 	target_include_directories(chiaki-lib PRIVATE "${MINIUPNPC_PREFIX_INCLUDE_DIR}")
+ else()
+@@ -171,7 +175,7 @@ else()
+ 	target_link_libraries(chiaki-lib PkgConfig::MINIUPNPC)
+ endif()
+ 
+-if(NOT CHIAKI_IS_SWITCH AND NOT CHIAKI_ENABLE_ANDROID)
++if(NOT CHIAKI_IS_SWITCH AND NOT CHIAKI_ENABLE_ANDROID AND NOT CHIAKI_DEPS_FROM_PARENT)
+ 	find_program(PKG_CONFIG_EXECUTABLE pkg-config)
+ 	if(PKG_CONFIG_EXECUTABLE)
+ 		pkg_search_module(LIBEVENT libevent QUIET IMPORTED_TARGET)

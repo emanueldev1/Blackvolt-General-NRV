@@ -6,6 +6,9 @@ add_executable(blackvolt_engine_tests
   test_runtime.cpp
   test_player.cpp
   test_remote_import.cpp)
+if(BV_ENABLE_REMOTEPLAY)
+  target_sources(blackvolt_engine_tests PRIVATE test_remote_session.cpp)
+endif()
 target_include_directories(blackvolt_engine_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/src)
 target_link_libraries(blackvolt_engine_tests PRIVATE blackvolt_core)
 add_test(NAME blackvolt_engine_tests COMMAND blackvolt_engine_tests)

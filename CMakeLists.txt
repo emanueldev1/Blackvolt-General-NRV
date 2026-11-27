@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.28)
 project(blackvolt VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BV_BUILD_TESTS "Build engine unit tests" ON)
+option(BV_ENABLE_REMOTEPLAY "PlayStation Remote Play (chiaki-ng)" ON)
 
 # Engine binaries land next to the app so the UI finds blackvolt_engine.dll.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

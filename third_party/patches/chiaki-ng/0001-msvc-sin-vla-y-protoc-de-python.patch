@@ -1,0 +1,264 @@
+diff --git a/lib/include/chiaki/vla.h b/lib/include/chiaki/vla.h
+new file mode 100644
+index 0000000..b11388e
+--- /dev/null
++++ b/lib/include/chiaki/vla.h
+@@ -0,0 +1,13 @@
++// SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
++// Blackvolt: MSVC has no C99 variable length arrays. Same stack semantics via _alloca.
++#ifndef CHIAKI_VLA_H
++#define CHIAKI_VLA_H
++
++#ifdef _MSC_VER
++#include <malloc.h>
++#define CHIAKI_VLA(type, name, count) type *name = (type *)_alloca(sizeof(type) * (size_t)(count))
++#else
++#define CHIAKI_VLA(type, name, count) type name[count]
++#endif
++
++#endif // CHIAKI_VLA_H
+diff --git a/lib/protobuf/CMakeLists.txt b/lib/protobuf/CMakeLists.txt
+index 43fde68..483dcca 100644
+--- a/lib/protobuf/CMakeLists.txt
++++ b/lib/protobuf/CMakeLists.txt
+@@ -1,11 +1,19 @@
+ 
+ find_program(PROTOC protoc)
+-if(NOT PROTOC)
+-	message(FATAL_ERROR "Could not find protoc")
++if(PROTOC)
++	set(PROTOC_COMMAND "${PROTOC}")
++else()
++	# Blackvolt: fall back to the protoc bundled with Python's grpcio-tools.
++	execute_process(COMMAND "${PYTHON_EXECUTABLE}" -c "import grpc_tools.protoc"
++		RESULT_VARIABLE GRPC_TOOLS_MISSING OUTPUT_QUIET ERROR_QUIET)
++	if(GRPC_TOOLS_MISSING)
++		message(FATAL_ERROR "Could not find protoc (install protoc or 'pip install grpcio-tools')")
++	endif()
++	set(PROTOC_COMMAND "${PYTHON_EXECUTABLE}" -m grpc_tools.protoc)
+ endif()
+ 
+ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/takion.pb"
+-		COMMAND "${PROTOC}" "-o${CMAKE_CURRENT_BINARY_DIR}/takion.pb" "${CMAKE_CURRENT_SOURCE_DIR}/takion.proto" "-I${CMAKE_CURRENT_SOURCE_DIR}"
++		COMMAND ${PROTOC_COMMAND} "-o${CMAKE_CURRENT_BINARY_DIR}/takion.pb" "${CMAKE_CURRENT_SOURCE_DIR}/takion.proto" "-I${CMAKE_CURRENT_SOURCE_DIR}"
+ 		MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/takion.proto")
+ 
+ set(SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/takion.pb.c")
+diff --git a/lib/src/ctrl.c b/lib/src/ctrl.c
+index 7b1ce49..3633062 100644
+--- a/lib/src/ctrl.c
++++ b/lib/src/ctrl.c
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
+ 
+ #include <chiaki/ctrl.h>
++#include <chiaki/vla.h>
+ #include <chiaki/session.h>
+ #include <chiaki/base64.h>
+ #include <chiaki/http.h>
+@@ -724,7 +725,7 @@ static ChiakiErrorCode ctrl_message_send(ChiakiCtrl *ctrl, uint16_t type, const
+ 	if(ctrl->session->rudp)
+ 	{
+ 		uint8_t buf_size = 8 + payload_size;
+-		uint8_t buf[buf_size];
++		CHIAKI_VLA(uint8_t, buf, buf_size);
+ 		memcpy(buf, header, 8);
+ 		if(enc)
+ 			memcpy(buf + 8, enc, payload_size);
+@@ -1224,7 +1225,7 @@ static ChiakiErrorCode ctrl_connect(ChiakiCtrl *ctrl)
+ 			goto error;
+ 		}
+ 		size_t init_response_size = message.data_size - 8;
+-		uint8_t init_response[init_response_size];
++		CHIAKI_VLA(uint8_t, init_response, init_response_size);
+ 		memcpy(init_response, message.data + 8, init_response_size);
+ 		chiaki_rudp_message_pointers_free(&message);
+ 		err = chiaki_rudp_send_recv(session->rudp, &message, init_response, init_response_size, 0, COOKIE_REQUEST, COOKIE_RESPONSE, 2, 3);
+diff --git a/lib/src/regist.c b/lib/src/regist.c
+index caac172..be64171 100644
+--- a/lib/src/regist.c
++++ b/lib/src/regist.c
+@@ -3,6 +3,7 @@
+ #include "utils.h"
+ 
+ #include <chiaki/regist.h>
++#include <chiaki/vla.h>
+ #include <chiaki/rpcrypt.h>
+ #include <chiaki/http.h>
+ #include <chiaki/random.h>
+@@ -288,7 +289,7 @@ static void *regist_thread_func(void *user)
+ 			goto fail;
+ 		}
+ 		size_t init_response_size = message.data_size - 8;
+-		uint8_t init_response[init_response_size];
++		CHIAKI_VLA(uint8_t, init_response, init_response_size);
+ 		memcpy(init_response, message.data + 8, init_response_size);
+ 		chiaki_rudp_message_pointers_free(&message);
+ 		err = chiaki_rudp_send_recv(regist->info.rudp, &message, init_response, init_response_size, 0, COOKIE_REQUEST, COOKIE_RESPONSE, 2, 3);
+diff --git a/lib/src/remote/holepunch.c b/lib/src/remote/holepunch.c
+index d5104d1..df6b068 100644
+--- a/lib/src/remote/holepunch.c
++++ b/lib/src/remote/holepunch.c
+@@ -65,6 +65,7 @@
+ 
+ #include <chiaki/remote/holepunch.h>
+ #include <chiaki/stoppipe.h>
++#include <chiaki/vla.h>
+ #include <chiaki/thread.h>
+ #include <chiaki/base64.h>
+ #include <chiaki/random.h>
+@@ -3544,9 +3545,9 @@ static ChiakiErrorCode http_send_session_message(Session *session, SessionMessag
+         short_message_serialize(session, message, &payload_str, &payload_len);
+     else
+         session_message_serialize(session, message, &payload_str, &payload_len);
+-    char msg_buf[sizeof(session_message_envelope_fmt) * 2 + payload_len];
++    CHIAKI_VLA(char, msg_buf, sizeof(session_message_envelope_fmt) * 2 + payload_len);
+     snprintf(
+-        msg_buf, sizeof(msg_buf), session_message_envelope_fmt,
++        msg_buf, sizeof(session_message_envelope_fmt) * 2 + payload_len, session_message_envelope_fmt,
+         payload_str, session->account_id, console_uid_str,
+         session->console_type == CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS4 ? "PS4" : "PS5"
+     );
+@@ -4092,11 +4093,11 @@ static ChiakiErrorCode check_candidates(
+ 
+     size_t extra_addresses_used = 0;
+     // Set up addresses for each candidate + extras (use sockaddr_storage and cast bc needs to be at least that big if we get ipv6)
+-    struct sockaddr_storage addrs[num_candidates + EXTRA_CANDIDATE_ADDRESSES];
+-    socklen_t lens[num_candidates + EXTRA_CANDIDATE_ADDRESSES];
+-    Candidate candidates[num_candidates + EXTRA_CANDIDATE_ADDRESSES];
++    CHIAKI_VLA(struct sockaddr_storage, addrs, num_candidates + EXTRA_CANDIDATE_ADDRESSES);
++    CHIAKI_VLA(socklen_t, lens, num_candidates + EXTRA_CANDIDATE_ADDRESSES);
++    CHIAKI_VLA(Candidate, candidates, num_candidates + EXTRA_CANDIDATE_ADDRESSES);
+     memcpy(candidates, candidates_received, num_candidates * sizeof(Candidate));
+-    int responses_received[num_candidates + EXTRA_CANDIDATE_ADDRESSES];
++    CHIAKI_VLA(int, responses_received, num_candidates + EXTRA_CANDIDATE_ADDRESSES);
+ #ifdef __SWITCH__
+     // Use poll() on Switch — select() fails when FD numbers >= FD_SETSIZE (256)
+     struct pollfd *pollfds = NULL;
+@@ -5236,8 +5237,8 @@ static json_object* session_message_get_payload(ChiakiLog *log, json_object *ses
+         // Insert empty object as key for localPeerAddr key
+         size_t prefix_len = peeraddr_end - json;
+         size_t suffix_len = strlen(peeraddr_end);
+-        char fixed_json[strlen(json) + 3]; // {} + \0
+-        memset(fixed_json, 0, sizeof(fixed_json));
++        CHIAKI_VLA(char, fixed_json, strlen(json) + 3); // {} + \0
++        memset(fixed_json, 0, strlen(json) + 3);
+         strncpy(fixed_json, json, prefix_len);
+         fixed_json[prefix_len] = '{';
+         fixed_json[prefix_len + 1] = '}';
+diff --git a/lib/src/remote/rudp.c b/lib/src/remote/rudp.c
+index d2b9c22..5dbc4e0 100644
+--- a/lib/src/remote/rudp.c
++++ b/lib/src/remote/rudp.c
+@@ -1,5 +1,6 @@
+ #include <chiaki/remote/rudp.h>
+ #include <chiaki/random.h>
++#include <chiaki/vla.h>
+ #include <chiaki/thread.h>
+ #include <chiaki/remote/rudpsendbuffer.h>
+ 
+@@ -89,7 +90,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_init_message(RudpInstance *rudp)
+     message.type = INIT_REQUEST;
+     message.subMessage = NULL;
+     message.data_size = 14;
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     size_t alloc_size = 8 + message.data_size;
+     uint8_t *serialized_msg = malloc(alloc_size * sizeof(uint8_t));
+     if(!serialized_msg)
+@@ -128,7 +129,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_cookie_message(RudpInstance *rudp
+     }
+     size_t msg_size = 0;
+     message.size = (0xC << 12) | alloc_size;
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     const uint8_t after_header[0x2] = { 0x05, 0x82 };
+     const uint8_t after_counter[0x6] = { 0x0B, 0x01, 0x01, 0x00, 0x01, 0x00 };
+     *(chiaki_unaligned_uint16_t *)(data) = htons(local_counter);
+@@ -151,7 +152,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_session_message(RudpInstance *rud
+     subMessage.subMessage = NULL;
+     subMessage.data_size = 2 + session_msg_size;
+     subMessage.size = (0xC << 12) | (8 + subMessage.data_size);
+-    uint8_t subdata[subMessage.data_size];
++    CHIAKI_VLA(uint8_t, subdata, subMessage.data_size);
+     *(chiaki_unaligned_uint16_t *)(subdata) = htons(local_counter);
+     memcpy(subdata + 2, session_msg, session_msg_size);
+     subMessage.data = subdata;
+@@ -169,7 +170,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_session_message(RudpInstance *rud
+     }
+     size_t msg_size = 0;
+     message.size = (0xC << 12) | (8 + message.data_size);
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     *(chiaki_unaligned_uint16_t *)(data) = htons(local_counter);
+     *(chiaki_unaligned_uint16_t *)(data + 2) = htons(remote_counter);
+     message.data = data;
+@@ -195,7 +196,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_ack_message(RudpInstance *rudp, u
+     }
+     size_t msg_size = 0;
+     message.size = (0xC << 12) | alloc_size;
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     const uint8_t after_counters[0x2] = { 0x00, 0x92 };
+     *(chiaki_unaligned_uint16_t *)(data) = htons(counter);
+     *(chiaki_unaligned_uint16_t *)(data + 2) = htons(remote_counter);
+@@ -224,7 +225,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_ctrl_message(RudpInstance *rudp,
+     }
+     size_t msg_size = 0;
+     message.size = (0xC << 12) | alloc_size;
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     *(chiaki_unaligned_uint16_t *)(data) = htons(counter);
+     memcpy(data + 2, ctrl_message, ctrl_message_size);
+     message.data = data;
+@@ -256,9 +257,9 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_switch_to_stream_connection_messa
+     }
+     size_t msg_size = 0;
+     message.size = (0xC << 12) | alloc_size;
+-    uint8_t data[message.data_size];
++    CHIAKI_VLA(uint8_t, data, message.data_size);
+     const size_t buf_size = 16;
+-    uint8_t buf[buf_size];
++    CHIAKI_VLA(uint8_t, buf, buf_size);
+     const uint8_t before_buf[8] = { 0x00, 0x00, 0x00, 0x10, 0x00, 0x0D, 0x00, 0x00 };
+     chiaki_random_bytes_crypt(buf, buf_size);
+     *(chiaki_unaligned_uint16_t *)(data) = htons(counter);
+@@ -393,7 +394,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_send_raw(RudpInstance *rudp, uint8_t *
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_select_recv(RudpInstance *rudp, size_t buf_size,  RudpMessage *message)
+ {
+-    uint8_t buf[buf_size]; 
++    CHIAKI_VLA(uint8_t, buf, buf_size);
+ 	ChiakiErrorCode err = chiaki_stop_pipe_select_single(&rudp->stop_pipe, rudp->sock, false, RUDP_EXPECT_TIMEOUT_MS);
+ 	if(err == CHIAKI_ERR_TIMEOUT || err == CHIAKI_ERR_CANCELED)
+ 		return err;
+@@ -422,7 +423,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_select_recv(RudpInstance *rudp, size_t
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_rudp_recv_only(RudpInstance *rudp, size_t buf_size,  RudpMessage *message)
+ {
+-    uint8_t buf[buf_size];
++    CHIAKI_VLA(uint8_t, buf, buf_size);
+ 	CHIAKI_SSIZET_TYPE received_sz = recv(rudp->sock, (CHIAKI_SOCKET_BUF_TYPE) buf, buf_size, 0);
+ 	if(received_sz <= 8)
+ 	{
+diff --git a/lib/src/session.c b/lib/src/session.c
+index 41c6bbf..ccff42c 100644
+--- a/lib/src/session.c
++++ b/lib/src/session.c
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
+ 
+ #include <chiaki/audioreceiver.h>
++#include <chiaki/vla.h>
+ #include <chiaki/senkusha.h>
+ #include <chiaki/session.h>
+ #include <chiaki/http.h>
+@@ -772,7 +773,7 @@ static ChiakiErrorCode session_thread_request_session(ChiakiSession *session, Ch
+ 			return err;
+ 		}
+ 		size_t init_response_size = message.data_size - 8;
+-		uint8_t init_response[init_response_size];
++		CHIAKI_VLA(uint8_t, init_response, init_response_size);
+ 		memcpy(init_response, message.data + 8, init_response_size);
+ 		chiaki_rudp_message_pointers_free(&message);
+ 		err = chiaki_rudp_send_recv(session->rudp, &message, init_response, init_response_size, 0, COOKIE_REQUEST, COOKIE_RESPONSE, 2, 3);

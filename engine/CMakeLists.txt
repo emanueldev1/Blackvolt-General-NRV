@@ -35,6 +35,7 @@ set(BV_ENGINE_SOURCES
   src/render/D3D12Presenter.cpp
   src/core/Engine.cpp
   src/core/Log.cpp
+  src/core/TimerResolution.cpp
   src/media/AudioDecoder.cpp
   src/media/Demuxer.cpp
   src/media/VideoDecoder.cpp
@@ -73,7 +74,7 @@ endif()
 target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json bv_ffmpeg)
 
 if(WIN32)
-  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32)
+  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32 winmm iphlpapi ws2_32)
 endif()
 
 if(BV_HAS_NGX)
@@ -82,6 +83,28 @@ if(BV_HAS_NGX)
   target_link_libraries(blackvolt_core PUBLIC
     debug "${BV_DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d_dbg.lib"
     optimized "${BV_DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib")
+endif()
+
+if(BV_ENABLE_REMOTEPLAY)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON) # chiaki-lib ends up inside the engine DLL / .so
+  include(${PROJECT_SOURCE_DIR}/cmake/RemotePlay.cmake)
+  target_sources(blackvolt_core PRIVATE
+    src/remote/ChiakiRuntime.cpp
+    src/remote/Discovery.cpp
+    src/remote/Registration.cpp
+    src/remote/StreamSession.cpp
+    src/remote/SdlGamepad.cpp
+    src/remote_api.cpp)
+  target_compile_definitions(blackvolt_core PUBLIC BV_HAS_REMOTEPLAY)
+  target_link_libraries(blackvolt_core PUBLIC chiaki-lib)
+  find_package(SDL3 CONFIG QUIET)
+  if(SDL3_FOUND)
+    target_compile_definitions(blackvolt_core PRIVATE BV_HAS_SDL3)
+    target_link_libraries(blackvolt_core PUBLIC SDL3::SDL3)
+    message(STATUS "Blackvolt: mandos vía SDL3 ${SDL3_VERSION}")
+  else()
+    message(WARNING "Blackvolt: SDL3 no encontrado, el streaming no leerá mandos físicos")
+  endif()
 endif()
 
 add_library(blackvolt_engine SHARED src/dll_main.cpp)

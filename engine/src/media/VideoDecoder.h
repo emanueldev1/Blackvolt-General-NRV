@@ -18,6 +18,11 @@ public:
     static std::optional<VideoDecoder> open(const StreamInfo& stream, ID3D12Device* device, int extraFrames,
                                             std::string* error);
 
+    // Raw elementary stream (Annex B), e.g. a Remote Play feed. lowLatency: output every
+    // frame as soon as it is decoded (no reordering delay, no frame threading).
+    static std::optional<VideoDecoder> openStream(AVCodecID codecId, ID3D12Device* device, int extraFrames,
+                                                  bool lowLatency, std::string* error);
+
     VideoDecoder(VideoDecoder&&) noexcept = default;
     VideoDecoder& operator=(VideoDecoder&&) noexcept = default;
 
@@ -32,6 +37,9 @@ public:
 
 private:
     VideoDecoder() = default;
+    static std::optional<VideoDecoder> create(const AVCodec* codec, const AVCodecParameters* params, AVRational timeBase,
+                                              ID3D12Device* device, int extraFrames, bool lowLatency,
+                                              std::string* error);
     CodecCtxPtr ctx_;
     BufferRefPtr hwDevice_;
     bool hardware_ = false;

@@ -30,6 +30,10 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-sdks.ps1
 
+      - name: Python tools for chiaki-ng's protocol code generator
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check protobuf grpcio-tools
+
       - name: Configure engine
         run: cmake --preset windows-x64
         timeout-minutes: 90

@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 
+#include <algorithm>
 #include <thread>
 
 #if defined(_WIN32) && __has_include(<libavutil/hwcontext_d3d12va.h>)
@@ -43,17 +44,40 @@ AVBufferRef* makeD3D12Device(ID3D12Device* device) {
 
 std::optional<VideoDecoder> VideoDecoder::open(const StreamInfo& stream, ID3D12Device* device, int extraFrames,
                                                std::string* error) {
+    const AVCodec* codec = avcodec_find_decoder(stream.params->codec_id);
+    if (!codec) {
+        if (error) *error = std::string("códec no soportado: ") + avcodec_get_name(stream.params->codec_id);
+        return std::nullopt;
+    }
+    return create(codec, stream.params, stream.timeBase, device, extraFrames, false, error);
+}
+
+std::optional<VideoDecoder> VideoDecoder::openStream(AVCodecID codecId, ID3D12Device* device, int extraFrames,
+                                                     bool lowLatency, std::string* error) {
+    const AVCodec* codec = avcodec_find_decoder(codecId);
+    if (!codec) {
+        if (error) *error = std::string("códec no soportado: ") + avcodec_get_name(codecId);
+        return std::nullopt;
+    }
+    return create(codec, nullptr, AVRational{1, 1000000}, device, extraFrames, lowLatency, error);
+}
+
+std::optional<VideoDecoder> VideoDecoder::create(const AVCodec* codec, const AVCodecParameters* params,
+                                                 AVRational timeBase, ID3D12Device* device, int extraFrames,
+                                                 bool lowLatency, std::string* error) {
     auto fail = [&](const std::string& msg) -> std::optional<VideoDecoder> {
         if (error) *error = msg;
         return std::nullopt;
     };
-    const AVCodec* codec = avcodec_find_decoder(stream.params->codec_id);
-    if (!codec) return fail(std::string("códec no soportado: ") + avcodec_get_name(stream.params->codec_id));
-
     VideoDecoder d;
     d.ctx_.reset(avcodec_alloc_context3(codec));
-    if (!d.ctx_ || avcodec_parameters_to_context(d.ctx_.get(), stream.params) < 0) return fail("contexto de códec");
-    d.ctx_->pkt_timebase = stream.timeBase;
+    if (!d.ctx_) return fail("contexto de códec");
+    if (params && avcodec_parameters_to_context(d.ctx_.get(), params) < 0) return fail("contexto de códec");
+    d.ctx_->pkt_timebase = timeBase;
+    if (lowLatency) {
+        d.ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+        d.ctx_->flags2 |= AV_CODEC_FLAG2_FAST;
+    }
 
 #if defined(BV_HAS_D3D12VA)
     if (device) {
@@ -73,15 +97,15 @@ std::optional<VideoDecoder> VideoDecoder::open(const StreamInfo& stream, ID3D12D
 #endif
 
     if (!d.hardware_) {
-        // Software path: use every core, frame threading keeps latency acceptable for playback.
         d.ctx_->thread_count = static_cast<int>(std::max(2u, std::thread::hardware_concurrency()));
-        d.ctx_->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+        // Frame threading adds one frame of delay per thread: fine for files, not for live input.
+        d.ctx_->thread_type = lowLatency ? FF_THREAD_SLICE : (FF_THREAD_FRAME | FF_THREAD_SLICE);
     }
 
     const int err = avcodec_open2(d.ctx_.get(), codec, nullptr);
     if (err < 0) return fail("no se pudo abrir el decodificador: " + errorString(err));
-    log::info("decoder: {} {}x{} ({})", codec->name, d.ctx_->width, d.ctx_->height,
-              d.hardware_ ? "D3D12 Video" : "software");
+    log::info("decoder: {} {}x{} ({}{})", codec->name, d.ctx_->width, d.ctx_->height,
+              d.hardware_ ? "D3D12 Video" : "software", lowLatency ? ", baja latencia" : "");
     return d;
 }
 

@@ -4,3 +4,4 @@
 *.xaml text eol=crlf
 *.png binary
 *.ico binary
+*.patch -text

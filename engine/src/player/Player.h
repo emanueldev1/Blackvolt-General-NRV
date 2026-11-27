@@ -3,6 +3,7 @@
 #include "BoundedQueue.h"
 #include "MediaClock.h"
 #include "Sinks.h"
+#include "core/TimerResolution.h"
 #include "media/Demuxer.h"
 #include "media/FFmpeg.h"
 #include "telemetry/Telemetry.h"
@@ -79,6 +80,7 @@ private:
     ID3D12Device* device_;
     IVideoPresenter& presenter_;
     AudioSinkFactory audioFactory_;
+    HighResolutionTimer timer_; // precise frame pacing while a player exists
     telemetry::Telemetry& telemetry_;
 
     BoundedQueue<PacketItem> videoPackets_{96};
