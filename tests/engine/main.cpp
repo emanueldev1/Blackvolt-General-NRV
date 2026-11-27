@@ -5,6 +5,12 @@
 #include <cstdlib>
 #include <thread>
 
+#if defined(_WIN32)
+#include <crtdbg.h>
+#include <stdlib.h>
+#include <windows.h>
+#endif
+
 // A test that hangs aborts the run with its name, instead of stalling CI until the job timeout.
 namespace {
 std::atomic<const char*> g_current{nullptr};
@@ -17,6 +23,15 @@ long long nowMs() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+#if defined(_WIN32)
+    // CI has no desktop: send CRT asserts and abort() to stderr instead of modal dialogs that hang.
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    for (int type : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
+        _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+    }
+#endif
     std::thread([] {
         for (;;) {
             std::this_thread::sleep_for(std::chrono::seconds(1));

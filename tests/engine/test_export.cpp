@@ -73,8 +73,10 @@ TEST(export_transcodes_and_scales_clip) {
     CHECK(p.outHeight == 360);
     CHECK(!p.hardware);
 
+    std::printf("  export: comprobando %s\n", output.c_str());
     std::string error;
     auto d = bv::media::Demuxer::open(output, &error);
+    std::printf("  export: abierto=%d %s\n", d.has_value() ? 1 : 0, error.c_str());
     CHECK(d.has_value());
     if (d) {
         CHECK(d->video().params->height == 360);
