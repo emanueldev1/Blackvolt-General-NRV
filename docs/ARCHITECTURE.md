@@ -38,7 +38,7 @@ Blackvolt usa los runtimes NGX de NVIDIA, cargados en tiempo de ejecución desde
 
 | DLL | Función | Origen |
 |---|---|---|
-| `nvngx_dlssnr.dll` | DLSS NR (Neural Rendering): reducción de ruido y reconstrucción | DLSS SDK (oficial) |
+| `nvngx_dlssnr.dll` | DLSS NR (Neural Rendering): etapa preparada (`enhance/NeuralRendering.h`), sin runtime hasta que NVIDIA lo publique | — |
 | `nvngx_dlssg.dll` | DLSS Frame Generation | DLSS SDK (oficial) |
 | `nvngx_vsr.dll` | RTX Video Super Resolution | RTX Video SDK (oficial) |
 | `nvngx_truehdr.dll` | RTX Video TrueHDR | RTX Video SDK (oficial) |

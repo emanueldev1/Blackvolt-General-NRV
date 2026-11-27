@@ -41,17 +41,11 @@ TEST(repo_manifest_parses) {
     CHECK(m.has_value());
     if (!m) { std::printf("  %s\n", error.c_str()); return; }
     CHECK(m->forFeature(BV_FEATURE_DLSS_SR).size() == 1);
-    CHECK(m->forFeature(BV_FEATURE_DLSS_NR).size() == 3);
+    // No DLSS NR runtime is shipped or recognised until NVIDIA publishes it officially.
+    CHECK(m->forFeature(BV_FEATURE_DLSS_NR).empty());
     const auto* sr = m->findByHash("D00B5B0AB29C3CA101B70C3A5ECB3A01B7EF33766A3383A28A18623083E6123E");
     CHECK(sr && sr->bundled && sr->origin == Origin::Official);
-    int bundledNr = 0, legacyNr = 0;
-    for (const auto* nr : m->forFeature(BV_FEATURE_DLSS_NR)) {
-        CHECK(nr->origin == Origin::Community);
-        bundledNr += nr->bundled;
-        legacyNr += nr->slot == "legacy";
-    }
-    CHECK(bundledNr == 2); // default + RTX 20/30 build
-    CHECK(legacyNr == 1);
+    for (const auto& r : m->entries()) CHECK(r.origin == Origin::Official);
 }
 
 TEST(manifest_rejects_bad_input) {

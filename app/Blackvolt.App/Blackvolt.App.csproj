@@ -37,7 +37,6 @@
   <ItemGroup>
     <None Include="$(RepoRoot)runtime\manifest.json" Link="runtime\manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(DlssRelDir)*.dll" Condition="Exists('$(DlssRelDir)')" Link="runtime\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(RepoRoot)third_party\sdk\community\**\*.dll" Link="runtime\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

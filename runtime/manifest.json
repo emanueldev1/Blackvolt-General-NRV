@@ -1,54 +1,31 @@
 {
   "schema": 1,
-  "comment": "Known NVIDIA NGX runtime builds. 'bundled' files ship inside Release packages; slot 'legacy' goes to runtime/legacy/ and is preferred on RTX 20/30 GPUs. Others are only recognised when the user imports them.",
+  "comment": "Known NVIDIA NGX runtime builds. 'bundled' files ship inside Release packages; the others are only recognised when the user imports them.",
   "runtimes": [
     {
-      "feature": "dlss_sr", "file": "nvngx_dlss.dll", "version": "310.9.16.0",
-      "sha256": "d00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e", "bytes": 58956912,
-      "origin": "official", "label": "DLSS 310.9.16 (NVIDIA)", "bundled": true,
+      "feature": "dlss_sr", "file": "nvngx_dlss.dll", "version": "310.9.16.0", "sha256": "d00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e",
+      "bytes": 58956912, "origin": "official", "label": "DLSS 310.9.16 (NVIDIA)", "bundled": true,
       "source": "https://github.com/NVIDIA/DLSS @ 9981c6350dc58c0ce21f024fd65e31e851c31689"
     },
     {
-      "feature": "dlss_rr", "file": "nvngx_dlssd.dll", "version": "310.9.16.0",
-      "sha256": "b49435ae346f227feafe7bbe937d88277ea0ee7323975ec06488f377fdb46cee", "bytes": 48343664,
-      "origin": "official", "label": "DLSS Ray Reconstruction 310.9.16 (NVIDIA)", "bundled": true,
+      "feature": "dlss_rr", "file": "nvngx_dlssd.dll", "version": "310.9.16.0", "sha256": "b49435ae346f227feafe7bbe937d88277ea0ee7323975ec06488f377fdb46cee",
+      "bytes": 48343664, "origin": "official", "label": "DLSS Ray Reconstruction 310.9.16 (NVIDIA)", "bundled": true,
       "source": "https://github.com/NVIDIA/DLSS @ 9981c6350dc58c0ce21f024fd65e31e851c31689"
     },
     {
-      "feature": "dlss_fg", "file": "nvngx_dlssg.dll", "version": "310.9.16.0",
-      "sha256": "8d59d49b36410dd6b62fef2503a5871d347415bd85d943fa0848563a95dd50c7", "bytes": 7506544,
-      "origin": "official", "label": "DLSS Frame Generation 310.9.16 (NVIDIA)", "bundled": true,
+      "feature": "dlss_fg", "file": "nvngx_dlssg.dll", "version": "310.9.16.0", "sha256": "8d59d49b36410dd6b62fef2503a5871d347415bd85d943fa0848563a95dd50c7",
+      "bytes": 7506544, "origin": "official", "label": "DLSS Frame Generation 310.9.16 (NVIDIA)", "bundled": true,
       "source": "https://github.com/NVIDIA/DLSS @ 9981c6350dc58c0ce21f024fd65e31e851c31689"
     },
     {
-      "feature": "dlss_fg", "file": "nvngx_dlssg.dll", "version": "310.9.16.0",
-      "sha256": "cadee1aa6db3907babdc3285da2aebc4553d92b89c38ba3eae8abd8bba1bea72", "bytes": 7506544,
-      "origin": "official", "label": "DLSS Frame Generation 310.9.16, modo rendimiento (NVIDIA App)", "bundled": false,
+      "feature": "dlss_fg", "file": "nvngx_dlssg.dll", "version": "310.9.16.0", "sha256": "cadee1aa6db3907babdc3285da2aebc4553d92b89c38ba3eae8abd8bba1bea72",
+      "bytes": 7506544, "origin": "official", "label": "DLSS Frame Generation 310.9.16, modo rendimiento (NVIDIA App)", "bundled": false,
       "source": "NVIDIA App over-the-air model store"
     },
     {
-      "feature": "rtx_vsr", "file": "nvngx_vsr.dll", "version": "1.8.3.0",
-      "sha256": "0cc98643a76c05ca6d73ec81a898d545b18e5c080667d72854a1bfaebd56e1ed", "bytes": 59120752,
-      "origin": "official", "label": "RTX Video Super Resolution 1.8.3 (NVIDIA)", "bundled": false,
+      "feature": "rtx_vsr", "file": "nvngx_vsr.dll", "version": "1.8.3.0", "sha256": "0cc98643a76c05ca6d73ec81a898d545b18e5c080667d72854a1bfaebd56e1ed",
+      "bytes": 59120752, "origin": "official", "label": "RTX Video Super Resolution 1.8.3 (NVIDIA)", "bundled": false,
       "source": "nvidia-vfx 0.2.0.0 wheel"
-    },
-    {
-      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.8.3.0",
-      "sha256": "f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc", "bytes": 165840496,
-      "origin": "community", "label": "DLSS NR 310.8.3 (comunidad, Lecram)", "bundled": true,
-      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.8.Lecram"
-    },
-    {
-      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.8.2.0",
-      "sha256": "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927", "bytes": 165830144,
-      "origin": "community", "label": "DLSS NR 310.8 SF-v2 para RTX 20/30 (comunidad, ShortFuse)", "bundled": true, "slot": "legacy",
-      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.8.SF-v2"
-    },
-    {
-      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.9.16.0",
-      "sha256": "cdfa6c1ec784867182164c7836f324f087b5c9f374d0c9fe46f54999feabf3ed", "bytes": 276162560,
-      "origin": "community", "label": "DLSS NR 310.9.16 FP16 (comunidad, ShortFuse)", "bundled": false,
-      "source": "ShortFuse compat-fp16-310.9.16"
     }
   ]
 }

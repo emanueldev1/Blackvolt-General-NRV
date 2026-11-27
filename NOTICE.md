@@ -9,15 +9,19 @@ Los paquetes de Release incluyen DLLs de NVIDIA (`nvngx_dlss.dll`, `nvngx_dlssd.
 `nvngx_dlssg.dll`) del [DLSS SDK](https://github.com/NVIDIA/DLSS) bajo la NVIDIA RTX SDKs License.
 Siguen siendo software propietario de NVIDIA. Blackvolt no está patrocinado ni respaldado por NVIDIA.
 
-## DLSS NR (builds de la comunidad)
+## DLSS NR
 
-`runtime/nvngx_dlssnr.dll` y `runtime/legacy/nvngx_dlssnr.dll` son builds de la comunidad
-**modificadas** a partir del runtime DLSS NR de NVIDIA (Lecram 310.8.3 y ShortFuse SF-v2 310.8.2),
-obtenidas de https://github.com/RankFTW/rhi-repo y verificadas por SHA-256 (`runtime/manifest.json`).
-No están firmadas por NVIDIA ni respaldadas por NVIDIA. Los derechos de NVIDIA sobre el runtime
-y el modelo no se ven afectados por la licencia de Blackvolt.
+Blackvolt no incluye ni descarga ningún runtime de DLSS NR. El motor tiene preparada la etapa
+(`engine/src/enhance/NeuralRendering.h`) para cuando NVIDIA publique NR oficialmente para
+aplicaciones de terceros.
 
 ## Otros
 
 - nlohmann/json — MIT.
 - Windows App SDK — MIT.
+- chiaki-ng (https://github.com/streetpea/chiaki-ng) — AGPL-3.0 con excepción de OpenSSL. Por usarlo,
+  Blackvolt completo se distribuye bajo AGPL-3.0.
+- SDL3 — zlib.
+- FFmpeg — LGPL-2.1+ (enlazado dinámicamente desde vcpkg).
+- OpenSSL, Opus, json-c, libevent, miniupnpc, curl, nanopb, Jerasure, GF-Complete: sus licencias
+  respectivas (Apache-2.0, BSD, MIT y similares), incluidas en las carpetas de cada paquete.

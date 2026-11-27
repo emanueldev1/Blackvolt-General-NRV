@@ -1,10 +1,22 @@
 # Blackvolt
 
-Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: DLSS NR, súper resolución,
+Mejora de video en tiempo real para Windows con GPUs NVIDIA RTX: súper resolución,
 HDR, generación de fotogramas y estadísticas detalladas, en una app rápida y limpia.
 
-> Estado: **0.1.0 en desarrollo.** La base del motor y la app ya funcionan; el pipeline de
-> video llega en las siguientes versiones (ver [ROADMAP](docs/ROADMAP.md)).
+> Estado: **0.1.0 en desarrollo.**
+
+## Qué hace
+
+- **Reproductor** de archivos locales con decodificación por hardware (D3D12 Video), presentación
+  sin copias y VRR / G-SYNC.
+- **PlayStation Remote Play (PS5 y PS4)** basado en chiaki-ng: descubre consolas en la red, las
+  despierta, empareja con PIN y transmite hasta 1080p60 en HEVC/H.264 con DualSense (gatillos,
+  vibración, giroscopio). **Importa los emparejamientos de Veyra y de chiaki-ng** para no volver a
+  emparejar; las credenciales se guardan cifradas con DPAPI.
+- **RTX Video Super Resolution y TrueHDR** por la vía oficial de NGX, en el reproductor y en el
+  stream, con vuelta automática a bilineal / SDR si la GPU o el driver no lo soportan.
+- **Estadísticas**: tiempos por etapa (decodificación, latencia, GPU por cada mejora), fotogramas
+  perdidos y recuperados, bitrate, RTT.
 
 ## Qué hay en el repo
 
@@ -44,7 +56,7 @@ También puedes abrir `Blackvolt.sln` en Visual Studio después de compilar el m
 ## Principios
 
 1. **Todo en la GPU.** Los fotogramas no vuelven a la CPU entre decodificar, mejorar y mostrar.
-2. **Runtimes DLSS/NGX.** DLSS NR, DLSS-G, RTX VSR y TrueHDR, incluidos en cada Release y verificados por hash. Sin parches en memoria ni suplantar la GPU.
+2. **Runtimes DLSS/NGX oficiales.** RTX VSR, TrueHDR y DLSS, cargados por la vía oficial de NGX y verificados por hash. Sin parches en memoria ni suplantar la GPU ni otras aplicaciones. DLSS NR queda preparado para cuando NVIDIA lo publique oficialmente.
 3. **Motor y UI separados.** La app habla con el motor solo por la API en C.
 4. **Medir todo.** Cada etapa del pipeline reporta su tiempo; las estadísticas son parte del producto.
 
