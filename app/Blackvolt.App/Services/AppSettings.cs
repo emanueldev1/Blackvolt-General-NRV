@@ -8,6 +8,7 @@ internal sealed class AppSettings
     public RemotePlaySettings RemotePlay { get; set; } = new();
     public VideoSettings Video { get; set; } = new();
     public CaptureSettings Capture { get; set; } = new();
+    public ExportSettings Export { get; set; } = new();
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Blackvolt", "settings.json");
@@ -87,4 +88,14 @@ internal sealed class CaptureSettings
     public int Fps { get; set; }                    // 0 = device default
 
     public int Width => Height switch { 720 => 1280, 1080 => 1920, 1440 => 2560, 2160 => 3840, _ => 0 };
+}
+
+/// <summary>Last export choices.</summary>
+internal sealed class ExportSettings
+{
+    public int Codec { get; set; } = 1;          // 0 H.264, 1 HEVC, 2 AV1
+    public int Height { get; set; }              // 0 = keep
+    public int Quality { get; set; } = 70;       // 0..100
+    public bool Audio { get; set; } = true;
+    public string Container { get; set; } = ".mp4";
 }

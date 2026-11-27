@@ -6,7 +6,7 @@ namespace Blackvolt.App.Interop;
 internal static partial class NativeEngine
 {
     private const string Dll = "blackvolt_engine";
-    public const uint ApiVersion = 7;
+    public const uint ApiVersion = 8;
     public const uint BestAdapter = uint.MaxValue;
 
     public enum Result : int

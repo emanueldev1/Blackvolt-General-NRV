@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Blackvolt.App.Views.ExportPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer>
+    <StackPanel Padding="36,28" Spacing="22" MaxWidth="900" HorizontalAlignment="Left">
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Exportar" Style="{StaticResource TitleLargeTextBlockStyle}" />
+        <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="640"
+                   Text="Recodifica un video con el codificador de tu GPU (NVENC, AMF o Media Foundation) y escálalo con Lanczos. Si no hay codificador por hardware se usa uno por software." />
+      </StackPanel>
+
+      <InfoBar x:Name="Notice" IsOpen="False" />
+
+      <Border x:Name="SetupCard" Style="{StaticResource BvCardStyle}" Padding="24">
+        <Grid RowSpacing="18" ColumnSpacing="20">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <StackPanel Grid.ColumnSpan="2" Spacing="6">
+            <TextBlock Text="Archivo de origen" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Grid ColumnSpacing="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="InputText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Ningún archivo elegido" />
+              <Button Grid.Column="1" Click="OnPickInput">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+                  <TextBlock Text="Elegir video" />
+                </StackPanel>
+              </Button>
+            </Grid>
+          </StackPanel>
+
+          <ComboBox x:Name="CodecBox" Grid.Row="1" Header="Códec" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="H.264 (máxima compatibilidad)" Tag="0" />
+            <ComboBoxItem Content="HEVC / H.265" Tag="1" />
+            <ComboBoxItem Content="AV1 (RTX 40 o superior)" Tag="2" />
+          </ComboBox>
+          <ComboBox x:Name="ResolutionBox" Grid.Row="1" Grid.Column="1" Header="Resolución" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="La original" Tag="0" />
+            <ComboBoxItem Content="720p" Tag="720" />
+            <ComboBoxItem Content="1080p" Tag="1080" />
+            <ComboBoxItem Content="1440p" Tag="1440" />
+            <ComboBoxItem Content="2160p (4K)" Tag="2160" />
+          </ComboBox>
+
+          <Slider x:Name="QualitySlider" Grid.Row="2" Header="Calidad" Minimum="0" Maximum="100" StepFrequency="5"
+                  TickFrequency="25" TickPlacement="Outside" ValueChanged="OnQualityChanged" />
+          <ComboBox x:Name="ContainerBox" Grid.Row="2" Grid.Column="1" Header="Contenedor" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="MP4" Tag=".mp4" />
+            <ComboBoxItem Content="MKV (admite cualquier audio)" Tag=".mkv" />
+            <ComboBoxItem Content="MOV" Tag=".mov" />
+          </ComboBox>
+
+          <ToggleSwitch x:Name="AudioSwitch" Grid.Row="3" Header="Conservar el audio" OnContent="Sí, sin recodificar" OffContent="No" />
+          <TextBlock x:Name="EncoderHint" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12">
+            <Button x:Name="StartButton" Click="OnStart" Style="{StaticResource AccentButtonStyle}" IsEnabled="False">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE74E;" FontSize="14" />
+                <TextBlock Text="Exportar…" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border x:Name="ProgressCard" Style="{StaticResource BvCardStyle}" Padding="24" Visibility="Collapsed">
+        <StackPanel Spacing="12">
+          <Grid>
+            <TextBlock x:Name="ProgressTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PercentText" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" />
+          </Grid>
+          <ProgressBar x:Name="Bar" Minimum="0" Maximum="1" />
+          <TextBlock x:Name="DetailText" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button x:Name="CancelButton" Content="Cancelar" Click="OnCancel" />
+            <Button x:Name="ShowButton" Content="Mostrar en la carpeta" Click="OnShowFile" Visibility="Collapsed" />
+            <Button x:Name="PlayButton" Content="Reproducir" Click="OnPlayFile" Visibility="Collapsed" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

@@ -13,7 +13,7 @@ public sealed partial class MainWindow : Window
         ["player"] = typeof(PlayerPage),
         ["remote"] = typeof(RemotePlayPage),
         ["capture"] = typeof(CapturePage),
-        ["export"] = typeof(ComingSoonPage),
+        ["export"] = typeof(ExportPage),
         ["runtimes"] = typeof(RuntimesPage),
         ["stats"] = typeof(StatsPage),
         ["settings"] = typeof(SettingsPage),

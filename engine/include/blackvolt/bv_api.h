@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 7u
+#define BV_API_VERSION 8u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -409,6 +409,53 @@ BV_API bv_result BV_CALL bv_stream_set_enhance(bv_stream* stream, const bv_enhan
 BV_API bv_result BV_CALL bv_stream_enhance_status(bv_stream* stream, bv_enhance_status* out);
 /* 1 when any display is in HDR mode; peak_nits receives the highest reported peak (may be NULL). */
 BV_API uint32_t BV_CALL bv_display_hdr(float* peak_nits);
+
+/* ------------------------------------------------------------------------------------------
+ * Export: offline transcode. Decode → Lanczos scale → hardware encoder (NVENC, AMF, Media
+ * Foundation) with a software fallback. Audio is copied when the container accepts it.
+ * ---------------------------------------------------------------------------------------- */
+typedef struct bv_export bv_export;
+
+typedef enum bv_export_codec { BV_EXPORT_H264 = 0, BV_EXPORT_HEVC = 1, BV_EXPORT_AV1 = 2 } bv_export_codec;
+
+typedef enum bv_export_state {
+    BV_EXPORT_IDLE = 0,
+    BV_EXPORT_RUNNING = 1,
+    BV_EXPORT_DONE = 2,
+    BV_EXPORT_FAILED = 3,
+    BV_EXPORT_CANCELLED = 4
+} bv_export_state;
+
+typedef struct bv_export_options {
+    uint32_t size;              /* = sizeof(bv_export_options) */
+    const char* input;          /* UTF-8 path */
+    const char* output;         /* UTF-8 path; .mp4, .mkv or .mov */
+    bv_export_codec codec;
+    uint32_t width, height;     /* 0 = keep; one value keeps the aspect ratio */
+    uint32_t quality;           /* 0..100 */
+    uint32_t audio;             /* 1 = keep the audio track */
+} bv_export_options;
+
+typedef struct bv_export_status {
+    uint32_t size;              /* = sizeof(bv_export_status) */
+    bv_export_state state;
+    double progress;            /* 0..1 */
+    double fps;
+    double elapsed_s;
+    double eta_s;
+    uint64_t frames;
+    uint32_t hardware;          /* 1 = GPU encoder */
+    uint32_t width, height;     /* output size */
+    char encoder[32];
+    char message[256];          /* UTF-8: error, or a note such as dropped audio */
+} bv_export_status;
+
+BV_API bv_result BV_CALL bv_export_start(const bv_export_options* options, bv_export** out_job);
+BV_API bv_result BV_CALL bv_export_status_get(bv_export* job, bv_export_status* out);
+BV_API bv_result BV_CALL bv_export_cancel(bv_export* job);
+BV_API void BV_CALL bv_export_destroy(bv_export* job); /* cancels and waits */
+/* 1 when FFmpeg was built with an encoder of this name (e.g. "hevc_nvenc"). */
+BV_API uint32_t BV_CALL bv_export_has_encoder(const char* name);
 
 #ifdef __cplusplus
 }

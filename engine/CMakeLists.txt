@@ -35,6 +35,8 @@ endif()
 set(BV_ENGINE_SOURCES
   src/api.cpp
   src/player_api.cpp
+  src/export_api.cpp
+  src/export/Exporter.cpp
   src/audio/WasapiSink.cpp
   src/render/D3D12Presenter.cpp
   src/core/Engine.cpp
