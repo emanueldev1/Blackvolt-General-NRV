@@ -6,7 +6,7 @@
     {
       "name": "ffmpeg",
       "default-features": false,
-      "features": ["avcodec", "avformat", "swresample", "swscale", "dav1d"]
+      "features": ["avcodec", "avformat", "swresample", "swscale"]
     }
   ]
 }
