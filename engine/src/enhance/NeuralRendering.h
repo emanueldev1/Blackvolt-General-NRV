@@ -18,7 +18,7 @@ struct NeuralControls {
     bool operator==(const NeuralControls&) const = default;
 };
 
-// Slot in the presenter's chain for NVIDIA's neural rendering (DLSS NR). It runs on the
+// Optional neural rendering stage in the presenter's chain. It runs on the
 // decoded picture at source size, before RTX VSR and TrueHDR:
 //
 //     YUV -> RGBA8 -> [NeuralRendering] -> [VSR] -> [TrueHDR] -> screen
