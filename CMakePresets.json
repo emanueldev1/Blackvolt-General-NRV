@@ -3,8 +3,7 @@
   "configurePresets": [
     {
       "name": "windows-x64",
-      "displayName": "Windows x64 (Visual Studio 2022)",
-      "generator": "Visual Studio 17 2022",
+      "displayName": "Windows x64 (newest Visual Studio installed)",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/engine",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }

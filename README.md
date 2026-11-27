@@ -18,7 +18,7 @@ interpolación de fotogramas y estadísticas detalladas, en una app rápida y li
 ## Requisitos
 
 - Windows 10 21H2+ o Windows 11, x64.
-- Visual Studio 2022 (17.12+) con las cargas **Desarrollo de escritorio con C++** y **Desarrollo de aplicaciones de WinUI / .NET**.
+- Visual Studio 2022 o más nuevo, con las cargas **Desarrollo de escritorio con C++** y **Desarrollo de aplicaciones de WinUI / .NET**.
 - CMake 3.26+ (viene con Visual Studio).
 - .NET 9 SDK.
 - GPU con DirectX 12. Para RTX Video, una NVIDIA GeForce RTX 20 o superior con driver reciente.
