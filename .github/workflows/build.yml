@@ -31,12 +31,18 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-sdks.ps1
 
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: '3.12'
+
       - name: Python tools for chiaki-ng's protocol code generator
         shell: pwsh
-        run: python -m pip install --disable-pip-version-check protobuf grpcio-tools
+        run: '& "${{ steps.python.outputs.python-path }}" -m pip install --disable-pip-version-check protobuf grpcio-tools'
 
       - name: Configure engine
-        run: cmake --preset windows-x64
+        # Pin CMake to the interpreter that has grpcio-tools (the runner has several Pythons).
+        run: cmake --preset windows-x64 "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
         timeout-minutes: 90
 
       - name: Save vcpkg packages
