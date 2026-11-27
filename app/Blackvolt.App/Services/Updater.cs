@@ -20,12 +20,12 @@ internal static class Updater
     private const string Repo = "emanueldev1/Blackvolt-General-NRV";
     private const string AssetSuffix = "-win-x64.zip";
 
+    // Must stay above Http: static initialisers run in source order and CreateClient reads it.
+    public static Version CurrentVersion { get; } =
+        typeof(App).Assembly.GetName().Version is { } v ? new Version(v.Major, v.Minor, Math.Max(0, v.Build)) : new Version(0, 1, 0);
     private static readonly HttpClient Http = CreateClient();
     private static readonly string UpdatesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Blackvolt", "updates");
-
-    public static Version CurrentVersion { get; } =
-        typeof(App).Assembly.GetName().Version is { } v ? new Version(v.Major, v.Minor, Math.Max(0, v.Build)) : new Version(0, 1, 0);
 
     /// <summary>Set once a background check finds something, so pages can show it.</summary>
     public static UpdateInfo? Available { get; private set; }
