@@ -26,3 +26,8 @@ jobs:
 
       - name: Build app
         run: dotnet build app/Blackvolt.App -c Debug -p:Platform=x64
+
+      - name: Show XAML compiler output
+        if: failure()
+        shell: pwsh
+        run: Get-ChildItem app -Recurse -Filter output.json | ForEach-Object { Get-Content $_.FullName }
