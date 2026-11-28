@@ -15,7 +15,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Spacing="4">
-          <TextBlock Text="PlayStation" Style="{StaticResource TitleLargeTextBlockStyle}" />
+          <TextBlock Text="PlayStation" Style="{StaticResource BvPageTitleStyle}" />
           <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="720"
                      Text="Juega en tu PS5 o PS4 desde este PC. Las consolas que ya emparejaste en chiaki-ng o Veyra aparecen aquí sin volver a emparejar." />
         </StackPanel>

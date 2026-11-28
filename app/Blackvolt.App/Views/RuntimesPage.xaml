@@ -12,7 +12,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Spacing="4">
-          <TextBlock Text="Runtimes NVIDIA" Style="{StaticResource TitleLargeTextBlockStyle}" />
+          <TextBlock Text="Runtimes NVIDIA" Style="{StaticResource BvPageTitleStyle}" />
           <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                      Text="Las DLLs de DLSS y RTX Video que usa Blackvolt. Las incluidas se verifican por hash; también puedes importar otras versiones." />
         </StackPanel>

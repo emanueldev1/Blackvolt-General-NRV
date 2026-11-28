@@ -12,7 +12,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Spacing="4">
-          <TextBlock Text="Captura" Style="{StaticResource TitleLargeTextBlockStyle}" />
+          <TextBlock Text="Captura" Style="{StaticResource BvPageTitleStyle}" />
           <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="640"
                      Text="Mira tu consola, cámara o capturadora con la menor latencia posible, con Super Resolution y TrueHDR si tu GPU los soporta." />
         </StackPanel>

@@ -7,7 +7,7 @@
     <StackPanel Padding="36,28" Spacing="22" MaxWidth="900" HorizontalAlignment="Left">
 
       <StackPanel Spacing="4">
-        <TextBlock Text="Exportar" Style="{StaticResource TitleLargeTextBlockStyle}" />
+        <TextBlock Text="Exportar" Style="{StaticResource BvPageTitleStyle}" />
         <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="640"
                    Text="Recodifica un video con el codificador de tu GPU (NVENC, AMF o Media Foundation) y escálalo con Lanczos. Si no hay codificador por hardware se usa uno por software." />
       </StackPanel>

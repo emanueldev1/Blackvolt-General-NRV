@@ -4,7 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <StackPanel Padding="36,28" Spacing="8">
-    <TextBlock x:Name="Heading" Style="{StaticResource TitleLargeTextBlockStyle}" />
+    <TextBlock x:Name="Heading" Style="{StaticResource BvPageTitleStyle}" />
     <TextBlock Text="Esta sección llega en una próxima versión. Mira docs/ROADMAP.md."
                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
   </StackPanel>

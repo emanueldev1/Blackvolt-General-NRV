@@ -82,6 +82,17 @@
       <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FF7FB2FF" />
       <SolidColorBrush x:Key="AccentTextFillColorTertiaryBrush" Color="#FF5B9BFF" />
       <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#FF5D6578" />
+      <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF3B82F6" />
+      <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#FF5B9BFF" />
+      <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#FF2563EB" />
+      <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#FF1E2638" />
+      <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#E6FFFFFF" />
+      <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#FF5D6578" />
+      <SolidColorBrush x:Key="AccentButtonBorderBrush" Color="#FF4C8DF8" />
+      <SolidColorBrush x:Key="AccentButtonBorderBrushPointerOver" Color="#FF6FA6FF" />
+      <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#FF2563EB" />
 
       <!-- Toggles and sliders in the brand blue -->
       <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#FF3B82F6" />

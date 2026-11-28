@@ -7,7 +7,7 @@
   <ScrollViewer>
   <StackPanel Padding="36,28" Spacing="20">
     <StackPanel Spacing="4">
-      <TextBlock Text="Estadísticas" Style="{StaticResource TitleLargeTextBlockStyle}" />
+      <TextBlock Text="Estadísticas" Style="{StaticResource BvPageTitleStyle}" />
       <TextBlock Text="Tiempo por etapa del pipeline (últimos ~4 s). Se actualiza dos veces por segundo."
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </StackPanel>

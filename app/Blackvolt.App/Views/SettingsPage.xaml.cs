@@ -30,6 +30,89 @@ public sealed partial class SettingsPage : Page
         NrAutoSwitch.IsOn = AppSettings.Current.Video.Nr.AutoInstall;
         ResumeSwitch.IsOn = AppSettings.Current.Capture.ResumeLastSource;
         if (Updater.Available is { } update) ShowUpdate(update);
+
+        var ui = AppSettings.Current.Ui;
+        foreach (var (label, _) in StartPages) StartPageBox.Items.Add(label);
+        StartPageBox.SelectedIndex = Math.Max(0, Array.FindIndex(StartPages, p => p.Tag == ui.StartPage));
+        foreach (var (label, _) in HideOptions) AutoHideBox.Items.Add(label);
+        AutoHideBox.SelectedIndex = Math.Max(0, Array.FindIndex(HideOptions, o => Math.Abs(o.Seconds - ui.AutoHideSeconds) < 0.2));
+        RememberWindowSwitch.IsOn = ui.RememberWindow;
+        ReduceMotionSwitch.IsOn = ui.ReduceMotion;
+        _loaded = true;
+    }
+
+    private static readonly (string Label, string Tag)[] StartPages =
+        [("Inicio", "home"), ("Reproductor", "player"), ("PlayStation", "remote"), ("Captura", "capture"), ("La última que usé", "last")];
+    private static readonly (string Label, double Seconds)[] HideOptions =
+        [("Tras 1,5 s (como Veyra)", 1.6), ("Tras 3 s", 3), ("Tras 6 s", 6), ("Nunca", 0)];
+    private bool _loaded;
+
+    private void OnStartPageChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loaded || StartPageBox.SelectedIndex < 0) return;
+        AppSettings.Current.Ui.StartPage = StartPages[StartPageBox.SelectedIndex].Tag;
+        AppSettings.Current.Save();
+    }
+
+    private void OnAutoHideChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loaded || AutoHideBox.SelectedIndex < 0) return;
+        AppSettings.Current.Ui.AutoHideSeconds = HideOptions[AutoHideBox.SelectedIndex].Seconds;
+        AppSettings.Current.Save();
+    }
+
+    private void OnRememberWindowToggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded) return;
+        AppSettings.Current.Ui.RememberWindow = RememberWindowSwitch.IsOn;
+        AppSettings.Current.Save();
+    }
+
+    private void OnReduceMotionToggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded) return;
+        AppSettings.Current.Ui.ReduceMotion = ReduceMotionSwitch.IsOn;
+        AppSettings.Current.Save();
+    }
+
+    private void OnOpenLogs(object sender, RoutedEventArgs e)
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{EngineLog.Folder}\"") { UseShellExecute = true });
+    }
+
+    private void OnCopyDiagnostics(object sender, RoutedEventArgs e)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Blackvolt {Updater.CurrentVersion} · {Environment.OSVersion}");
+        if (App.Engine?.Adapter is { } a) sb.AppendLine($"GPU: {a.Name} · {a.VramGiB:0.#} GB · driver {a.DriverVersion}");
+        else sb.AppendLine($"Motor: {App.EngineError}");
+        foreach (var v in new[] { NativeEngine.NrVariant.Compat, NativeEngine.NrVariant.Original })
+        {
+            var info = NrRuntimeInstaller.Info(v);
+            sb.AppendLine($"NR {v}: {(info.Installed != 0 ? $"{info.VersionText} {info.Sha256Text[..Math.Min(12, info.Sha256Text.Length)]}" : "no instalado")}");
+        }
+        foreach (var r in NrRuntimeInstaller.VideoRuntimes) sb.AppendLine($"{r.Label}: {(r.Installed ? "instalado" : "no instalado")}");
+        sb.AppendLine();
+        sb.AppendLine("--- engine.log (últimas líneas)");
+        try
+        {
+            using var f = new FileStream(EngineLog.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(f);
+            var lines = reader.ReadToEnd().Split('\n');
+            foreach (var line in lines.Skip(Math.Max(0, lines.Length - 80))) sb.AppendLine(line.TrimEnd('\r'));
+        }
+        catch (IOException) { sb.AppendLine("(sin registro)"); }
+        var crash = Path.Combine(EngineLog.Folder, "crash.log");
+        if (File.Exists(crash))
+        {
+            sb.AppendLine("--- crash.log (final)");
+            var text = File.ReadAllText(crash);
+            sb.AppendLine(text[Math.Max(0, text.Length - 4000)..]);
+        }
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(sb.ToString());
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        App.MainWindow?.Toast("Diagnóstico copiado", "Pégalo en tu mensaje o reporte.", InfoBarSeverity.Success, 3);
     }
 
     private UpdateInfo? _update;
