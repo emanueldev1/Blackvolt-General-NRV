@@ -33,7 +33,7 @@ struct EnhanceSettings {
     float sharpness = 0.25f;    // NIS 0..1
     enhance::ColorControls color{}; // colour controls and FXAA, after NR
     bool hdrPassthrough = true;     // HDR10/HLG sources on an HDR display stay HDR (else tone mapped)
-    bool compare = false;       // A/B: original on the left half, enhanced on the right
+    uint32_t compare = 0;       // A/B: 1 = original on the left half, 2 = original on the whole picture (hold V)
     bool operator==(const EnhanceSettings&) const = default;
 };
 

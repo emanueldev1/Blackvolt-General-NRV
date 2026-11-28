@@ -62,7 +62,7 @@ inline EnhanceSettings fromApi(const bv_enhance_settings& in) {
     n.antiFlicker = in.nr_anti_flicker <= 4 ? in.nr_anti_flicker : 0;
     n.stability = clampf(in.nr_stability, 0, 1, 1);
     s.interpolation = std::clamp<uint32_t>(in.interpolation, 1, 4);
-    s.compare = in.compare != 0;
+    s.compare = in.compare > 2 ? 1u : in.compare;
     s.denoise = std::min<uint32_t>(in.denoise, 3);
     s.scaler = in.scaler == 1 ? 1u : 0u;
     s.sharpness = clampf(in.sharpness, 0, 1, 0.25f);

@@ -2,96 +2,173 @@
 <Page
     x:Class="Blackvolt.App.Views.HomePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
   <ScrollViewer>
-    <StackPanel Padding="36,28" Spacing="20" MaxWidth="1100" HorizontalAlignment="Left">
-      <StackPanel Spacing="4">
-        <TextBlock Text="Bienvenido a Blackvolt" Style="{StaticResource TitleLargeTextBlockStyle}" />
-        <TextBlock Text="Mejora de video en tiempo real con tu GPU."
-                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      </StackPanel>
+    <Grid Padding="32,26,32,32" MaxWidth="1320" HorizontalAlignment="Stretch" RowSpacing="22">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
-      <InfoBar x:Name="UpdateBar" Severity="Success" IsOpen="False" Title="Hay una nueva versión de Blackvolt">
-        <InfoBar.ActionButton>
-          <Button Content="Ver e instalar" Click="OnOpenUpdate" Style="{StaticResource AccentButtonStyle}" />
-        </InfoBar.ActionButton>
-      </InfoBar>
-
-      <InfoBar x:Name="EngineErrorBar" Severity="Error" IsOpen="False" IsClosable="False"
-               Title="El motor no pudo iniciar" />
-
-      <!-- GPU card -->
-      <Border x:Name="GpuCard" Style="{StaticResource BvCardStyle}">
+      <!-- ================================================================ hero -->
+      <Border CornerRadius="18" BorderBrush="{StaticResource BvBorderStrongBrush}" BorderThickness="1"
+              Background="{StaticResource BvHeroGradient}" Padding="34,30">
         <Grid ColumnSpacing="24">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <FontIcon Glyph="&#xE7F8;" FontSize="40" Foreground="{StaticResource BvVoltBrush}"
-                    VerticalAlignment="Top" />
-          <StackPanel Grid.Column="1" Spacing="6">
-            <TextBlock Text="GPU ACTIVA" Style="{StaticResource CaptionTextBlockStyle}"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" CharacterSpacing="80" />
-            <TextBlock x:Name="GpuName" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBlock x:Name="GpuDetails" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="CAPACIDADES" Margin="0,12,0,4" Style="{StaticResource CaptionTextBlockStyle}"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" CharacterSpacing="80" />
-            <ItemsControl x:Name="CapabilityChips">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <Border Style="{StaticResource BvChipStyle}">
-                    <TextBlock Text="{x:Bind}" Style="{StaticResource CaptionTextBlockStyle}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+          <StackPanel Spacing="14" VerticalAlignment="Center">
+            <Border Style="{StaticResource BvBadgeStyle}" HorizontalAlignment="Left" Background="#1A3B82F6" BorderBrush="#403B82F6">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <Ellipse x:Name="HeroDot" Width="7" Height="7" Fill="{StaticResource BvSuccessBrush}" VerticalAlignment="Center" />
+                <TextBlock x:Name="HeroStatus" FontSize="12" Foreground="#FFB9D2FF" />
+              </StackPanel>
+            </Border>
+            <TextBlock x:Name="Greeting" Style="{StaticResource BvDisplayTextStyle}" FontSize="38" TextWrapping="Wrap" />
+            <TextBlock Text="Vídeo, capturadora y PlayStation mejorados con IA en tiempo real: DLSS NR, RTX Video Super Resolution, TrueHDR e interpolación de fotogramas."
+                       Style="{StaticResource BvMutedTextStyle}" FontSize="14" MaxWidth="620" HorizontalAlignment="Left" />
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
+              <Button Style="{StaticResource BvPrimaryButtonStyle}" Click="OnOpenFile">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+                  <TextBlock Text="Abrir vídeo" />
+                </StackPanel>
+              </Button>
+              <Button Click="OnGo" Tag="remote" Padding="14,7">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE7FC;" FontSize="14" />
+                  <TextBlock Text="Jugar en PlayStation" />
+                </StackPanel>
+              </Button>
+              <Button Click="OnOpenUrl" Style="{StaticResource BvGhostButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE71B;" FontSize="14" />
+                  <TextBlock Text="Abrir URL" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
           </StackPanel>
+          <Grid Grid.Column="1" Width="190" Height="190" VerticalAlignment="Center" x:Name="HeroArt">
+            <Ellipse Width="190" Height="190" Opacity="0.55">
+              <Ellipse.Fill>
+                <RadialGradientBrush>
+                  <GradientStop Color="#663B82F6" Offset="0" />
+                  <GradientStop Color="#0022D3EE" Offset="1" />
+                </RadialGradientBrush>
+              </Ellipse.Fill>
+            </Ellipse>
+            <Image Source="ms-appx:///Assets/Blackvolt-256.png" Width="132" Height="132" />
+          </Grid>
         </Grid>
       </Border>
 
-      <!-- Quick actions -->
-      <Grid ColumnSpacing="16">
+      <!-- ================================================================ notices -->
+      <StackPanel Grid.Row="1" Spacing="10" x:Name="Notices" Visibility="Collapsed">
+        <InfoBar x:Name="UpdateBar" Severity="Success" IsOpen="False" Title="Hay una nueva versión de Blackvolt">
+          <InfoBar.ActionButton>
+            <Button Content="Ver e instalar" Click="OnOpenUpdate" Style="{StaticResource AccentButtonStyle}" />
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="EngineErrorBar" Severity="Error" IsOpen="False" IsClosable="False" Title="El motor no pudo iniciar" />
+      </StackPanel>
+
+      <!-- ================================================================ body -->
+      <Grid Grid.Row="2" ColumnSpacing="22">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="340" />
         </Grid.ColumnDefinitions>
-        <Button Tag="player" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
-          <Border Style="{StaticResource BvCardStyle}">
-          <StackPanel Spacing="6">
-            <SymbolIcon Symbol="Play" HorizontalAlignment="Left" />
-            <TextBlock Text="Reproducir un video" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="Súper resolución y HDR en archivos locales." TextWrapping="Wrap"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-          </StackPanel>
+
+        <StackPanel Spacing="22">
+          <!-- Continue -->
+          <Border x:Name="ContinueCard" Style="{StaticResource BvCardStyle}" Padding="18,16" Visibility="Collapsed">
+            <Grid ColumnSpacing="16">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <Border Width="44" Height="44" CornerRadius="12" Background="{StaticResource BvPrimarySoftBrush}">
+                <FontIcon x:Name="ContinueIcon" Glyph="&#xE768;" FontSize="18" Foreground="{StaticResource BvVoltBrush}" />
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock Text="CONTINUAR" Style="{StaticResource BvLabelTextStyle}" />
+                <TextBlock x:Name="ContinueTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="ContinueDetail" Style="{StaticResource BvMutedTextStyle}" FontSize="12" />
+              </StackPanel>
+              <Button Grid.Column="2" Style="{StaticResource BvPrimaryButtonStyle}" Click="OnContinue" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE768;" FontSize="12" />
+                  <TextBlock Text="Reanudar" />
+                </StackPanel>
+              </Button>
+            </Grid>
           </Border>
-        </Button>
-        <Button Grid.Column="1" Tag="capture" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
-          <Border Style="{StaticResource BvCardStyle}">
-          <StackPanel Spacing="6">
-            <SymbolIcon Symbol="Video" HorizontalAlignment="Left" />
-            <TextBlock Text="Capturadora" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="Consola o cámara con latencia mínima." TextWrapping="Wrap"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <!-- Sources -->
+          <StackPanel Spacing="12">
+            <TextBlock Text="Empezar" Style="{StaticResource BvSectionTitleStyle}" />
+            <Grid x:Name="Tiles" ColumnSpacing="14" RowSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+            </Grid>
           </StackPanel>
-          </Border>
-        </Button>
-        <Button Grid.Column="2" Tag="export" Click="OnQuickAction" Padding="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
-          <Border Style="{StaticResource BvCardStyle}">
-          <StackPanel Spacing="6">
-            <SymbolIcon Symbol="Save" HorizontalAlignment="Left" />
-            <TextBlock Text="Exportar" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="Recodifica con NVENC, AMF o Media Foundation." TextWrapping="Wrap"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <!-- Recent -->
+          <StackPanel Spacing="12">
+            <Grid>
+              <TextBlock Text="Recientes" Style="{StaticResource BvSectionTitleStyle}" />
+              <HyperlinkButton x:Name="ClearRecent" Content="Vaciar" HorizontalAlignment="Right" Padding="6,2"
+                               Click="OnClearRecent" Foreground="{StaticResource BvMutedBrush}" />
+            </Grid>
+            <Border Style="{StaticResource BvCardStyle}" Padding="6">
+              <StackPanel>
+                <StackPanel x:Name="RecentList" />
+                <TextBlock x:Name="RecentEmpty" Margin="14,14" Style="{StaticResource BvMutedTextStyle}"
+                           Text="Aquí aparecerán los vídeos, capturas y consolas que uses. También puedes arrastrar un archivo a esta ventana." />
+              </StackPanel>
+            </Border>
           </StackPanel>
+        </StackPanel>
+
+        <!-- Side column -->
+        <StackPanel Grid.Column="1" Spacing="16">
+          <Border x:Name="GpuCard" Style="{StaticResource BvCardStyle}" Padding="18">
+            <StackPanel Spacing="12">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Border Width="36" Height="36" CornerRadius="10" Background="{StaticResource BvPrimarySoftBrush}">
+                  <FontIcon Glyph="&#xE964;" FontSize="16" Foreground="{StaticResource BvVoltBrush}" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock x:Name="GpuName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="230" />
+                  <TextBlock x:Name="GpuDetails" Style="{StaticResource BvMutedTextStyle}" FontSize="12" />
+                </StackPanel>
+              </StackPanel>
+              <Rectangle Height="1" Fill="{StaticResource BvBorderBrush}" />
+              <TextBlock Text="MEJORAS" Style="{StaticResource BvLabelTextStyle}" />
+              <StackPanel x:Name="FeatureList" Spacing="9" />
+              <Button Content="Gestionar runtimes" HorizontalAlignment="Stretch" Click="OnGo" Tag="runtimes" Margin="0,4,0,0" />
+            </StackPanel>
           </Border>
-        </Button>
+
+          <Border Style="{StaticResource BvCardStyle}" Padding="18">
+            <StackPanel Spacing="10">
+              <TextBlock Text="ATAJOS EN REPRODUCCIÓN" Style="{StaticResource BvLabelTextStyle}" />
+              <StackPanel x:Name="ShortcutList" Spacing="7" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </Grid>
-    </StackPanel>
+    </Grid>
   </ScrollViewer>
 </Page>

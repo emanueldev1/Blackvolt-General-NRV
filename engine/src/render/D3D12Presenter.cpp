@@ -1330,15 +1330,17 @@ struct D3D12Presenter::Impl {
         const D3D12_RECT scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
         drawPass(psoFor(bbFormat), rtv, finalViewport, scissor, finalParams, finalSrv);
 
-        // A/B: the original picture over the left half of the video area (not on generated frames).
-        if (settings.compare && plan.enhanced && interpT < 0 && srcRgb) {
+        // A/B: the original picture over the left half of the video area (not on generated frames),
+        // or over all of it while the user holds "show original".
+        if (settings.compare && plan.enhanced && (interpT < 0 || settings.compare == 2) && srcRgb) {
             bindRgb(compareCpu, srcRgb.Get(), kRgbaFormat);
             Params cp{};
             cp.uvScale[0] = cp.uvScale[1] = 1.0f;
             cp.mode = bbFormat == kHdrFormat ? 2 : 1;
             const D3D12_VIEWPORT vp{plan.vp.x, plan.vp.y, plan.vp.width, plan.vp.height, 0, 1};
             const LONG mid = static_cast<LONG>(plan.vp.x + plan.vp.width / 2);
-            const D3D12_RECT left{static_cast<LONG>(plan.vp.x), 0, mid - 1, static_cast<LONG>(height)};
+            const D3D12_RECT left{static_cast<LONG>(plan.vp.x), 0, settings.compare == 2 ? static_cast<LONG>(width) : mid - 1,
+                                  static_cast<LONG>(height)};
             drawPass(psoFor(bbFormat), rtv, vp, left, cp, compareGpu);
         }
 

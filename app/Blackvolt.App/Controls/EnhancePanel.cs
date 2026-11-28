@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using NrVariant = Blackvolt.App.Interop.NativeEngine.NrVariant;
 
 namespace Blackvolt.App.Controls;
@@ -15,7 +16,7 @@ namespace Blackvolt.App.Controls;
 /// Resolution and TrueHDR. Edits <see cref="AppSettings.Video"/> in place, saves it and raises
 /// <see cref="Changed"/> (debounced) so the page pushes it to its player or stream.
 /// </summary>
-internal sealed class EnhancePanel : StackPanel
+internal sealed class EnhancePanel : Grid
 {
     private static readonly (string Label, int Value)[] Qualities =
         [("Rápida", 1), ("Equilibrada", 2), ("Alta", 3), ("Máxima", 4)];
@@ -46,10 +47,34 @@ internal sealed class EnhancePanel : StackPanel
 
     public event Action? Changed;
 
+    // Pages (tabs). Hosts can add their own with AddPage().
+    private readonly StackPanel _header = new() { Spacing = 8 };
+    private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
+    private readonly ScrollViewer _scroller = new() { HorizontalScrollMode = ScrollMode.Disabled, Padding = new Thickness(0, 0, 14, 0) };
+    private readonly List<(string Title, ToggleButton Tab, UIElement Content)> _pages = [];
+    private readonly StackPanel _pImage = Page(), _pScale = Page(), _pMotion = Page(), _pColor = Page();
+
     public EnhancePanel()
     {
-        Width = 380;
-        Spacing = 8;
+        RowSpacing = 12;
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var tabStrip = new Border
+        {
+            Background = Resource<Brush>("BvSurface2Brush"),
+            BorderBrush = Resource<Brush>("BvBorderBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(3),
+            Child = _tabs,
+        };
+        SetRow(tabStrip, 1);
+        SetRow(_scroller, 2);
+        Children.Add(_header);
+        Children.Add(tabStrip);
+        Children.Add(_scroller);
+        StackPanel page = _header;
         _loading = true;
         _debounce.Tick += (_, _) =>
         {
@@ -58,8 +83,6 @@ internal sealed class EnhancePanel : StackPanel
             Changed?.Invoke();
         };
 
-        var title = new TextBlock { Text = "Mejora de video", FontWeight = FontWeights.SemiBold, FontSize = 16 };
-        Children.Add(title);
 
         // ---------------------------------------------------------------- User presets
         var presetRow = new Grid { ColumnSpacing = 6 };
@@ -76,7 +99,7 @@ internal sealed class EnhancePanel : StackPanel
         presetRow.Children.Add(_presetBox);
         presetRow.Children.Add(save);
         presetRow.Children.Add(delete);
-        Children.Add(presetRow);
+        page.Children.Add(presetRow);
         RefreshPresets();
         _presetBox.SelectionChanged += (_, _) =>
         {
@@ -102,20 +125,25 @@ internal sealed class EnhancePanel : StackPanel
         };
 
         // ---------------------------------------------------------------- Smoothness / A/B
-        AddCombo(this, "Fluidez de movimiento", ["Desactivada", "×2", "×3", "×4"],
+        page = _pMotion;
+        page.Children.Add(Caption("Interpolación de fotogramas"));
+        AddCombo(page, "Fluidez de movimiento", ["Desactivada", "×2", "×3", "×4"],
                  () => Math.Clamp(_settings.Interpolation, 1, 4) - 1, v => _settings.Interpolation = v + 1,
                  "Genera fotogramas intermedios con flujo óptico en la GPU (cualquier marca). Sin latencia añadida; se limita sola a lo que tu pantalla puede mostrar.");
-        AddToggle(this, "Comparar A/B (original a la izquierda)", () => _settings.Compare, v => _settings.Compare = v);
-        AddCombo(this, "Reducción de ruido", ["Desactivada", "Suave", "Media", "Fuerte"],
+        page.Children.Add(Caption("Comparar"));
+        AddToggle(page, "Comparar A/B (original a la izquierda)", () => _settings.Compare, v => _settings.Compare = v,
+                  "También puedes mantener pulsada la tecla V para ver el original un momento.");
+        page = _pImage;
+        AddCombo(page, "Reducción de ruido", ["Desactivada", "Suave", "Media", "Fuerte"],
                  () => Math.Clamp(_settings.Denoise, 0, 3), v => _settings.Denoise = v,
                  "Filtro bilateral que respeta los bordes, antes de DLSS NR. Útil con vídeo de bitrate bajo o grano.");
-        Children.Add(new MenuFlyoutSeparator { Margin = new Thickness(0, 4, 0, 4) });
+        page.Children.Add(Divider());
 
         // ---------------------------------------------------------------- DLSS NR
         _nr = new ToggleSwitch { Header = "DLSS NR · reconstrucción neuronal", OnContent = "Activado", OffContent = "Desactivado" };
-        Children.Add(_nr);
+        page.Children.Add(_nr);
         _nrState = Hint("");
-        Children.Add(_nrState);
+        page.Children.Add(_nrState);
 
         // Runtime download, shown when NR has no DLL to run.
         _download = Hint("");
@@ -126,14 +154,14 @@ internal sealed class EnhancePanel : StackPanel
             var variant = Nr.Runtime == 2 ? NrVariant.Original : NrVariant.Compat;
             if (await NrRuntimeInstaller.InstallAsync([variant])) Commit();
         };
-        Children.Add(_downloadButton);
-        Children.Add(_downloadBar);
-        Children.Add(_download);
+        page.Children.Add(_downloadButton);
+        page.Children.Add(_downloadBar);
+        page.Children.Add(_download);
         Unloaded += (_, _) => NrRuntimeInstaller.Changed -= OnInstallerChanged;
         Loaded += (_, _) => { NrRuntimeInstaller.Changed += OnInstallerChanged; OnInstallerChanged(); };
 
         _nrBody = new StackPanel { Spacing = 6 };
-        Children.Add(_nrBody);
+        page.Children.Add(_nrBody);
 
         // Presets
         var presets = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -229,10 +257,9 @@ internal sealed class EnhancePanel : StackPanel
         reset.Click += (_, _) => { Nr.ResetLook(); Load(); Commit(); };
         _nrBody.Children.Add(reset);
 
-        Children.Add(new MenuFlyoutSeparator { Margin = new Thickness(0, 4, 0, 4) });
-
         // ---------------------------------------------------------------- Colour
-        var color = Section("Color");
+        page = _pColor;
+        var color = page;
         AddSlider(color, "Brillo", -1, 1, 0.01, () => _settings.Brightness, v => _settings.Brightness = v, v => $"{v:+0.00;-0.00;0} EV");
         AddSlider(color, "Contraste", 0, 2, 0.01, () => _settings.Contrast, v => _settings.Contrast = v, v => $"{v * 100:0} %");
         AddSlider(color, "Saturación", 0, 2, 0.01, () => _settings.Saturation, v => _settings.Saturation = v, v => $"{v * 100:0} %");
@@ -244,29 +271,26 @@ internal sealed class EnhancePanel : StackPanel
         var colorReset = new HyperlinkButton { Content = "Restablecer color", Padding = new Thickness(0) };
         colorReset.Click += (_, _) => { _settings.ResetColor(); Load(); Commit(); };
         color.Children.Add(colorReset);
-        Children.Add(Wrap("Color y antialiasing", color));
-
-        Children.Add(new MenuFlyoutSeparator { Margin = new Thickness(0, 4, 0, 4) });
 
         // ---------------------------------------------------------------- RTX VSR
+        page = _pScale;
         _vsr = new ToggleSwitch { Header = "Superresolución", OnContent = "Activada", OffContent = "Desactivada" };
-        Children.Add(_vsr);
-        Children.Add(Hint("Reescala al tamaño real de la ventana. RTX VSR usa IA (GeForce RTX); NVIDIA Image Scaling funciona en cualquier GPU."));
-        AddCombo(this, "Escalador", ["RTX Video Super Resolution", "NVIDIA Image Scaling (cualquier GPU)"],
+        page.Children.Add(_vsr);
+        page.Children.Add(Hint("Reescala al tamaño real de la ventana. RTX VSR usa IA (GeForce RTX); NVIDIA Image Scaling funciona en cualquier GPU."));
+        AddCombo(page, "Escalador", ["RTX Video Super Resolution", "NVIDIA Image Scaling (cualquier GPU)"],
                  () => Math.Clamp(_settings.Scaler, 0, 1), v => _settings.Scaler = v);
-        AddSlider(this, "Nitidez (NIS)", 0, 1, 0.01, () => _settings.Sharpness, v => _settings.Sharpness = v, v => $"{v * 100:0} %");
+        AddSlider(page, "Nitidez (NIS)", 0, 1, 0.01, () => _settings.Sharpness, v => _settings.Sharpness = v, v => $"{v * 100:0} %");
         _quality = new ComboBox { Header = "Calidad", HorizontalAlignment = HorizontalAlignment.Stretch };
         foreach (var (label, _) in Qualities) _quality.Items.Add(label);
-        Children.Add(_quality);
-
-        Children.Add(new MenuFlyoutSeparator { Margin = new Thickness(0, 4, 0, 4) });
+        page.Children.Add(_quality);
+        page.Children.Add(Divider());
 
         // ---------------------------------------------------------------- TrueHDR
-        AddToggle(this, "Ver vídeo HDR como SDR (tone mapping)", () => _settings.HdrTonemap, v => _settings.HdrTonemap = v,
+        AddToggle(page, "Ver vídeo HDR como SDR (tone mapping)", () => _settings.HdrTonemap, v => _settings.HdrTonemap = v,
                   "Los vídeos HDR10/HLG se muestran en HDR si tu pantalla lo tiene activado; con esto se convierten siempre a SDR.");
         _hdr = new ToggleSwitch { Header = "RTX Video TrueHDR", OnContent = "Activado", OffContent = "Desactivado" };
-        Children.Add(_hdr);
-        Children.Add(Hint("Convierte el video SDR a HDR. Requiere HDR activado en Windows."));
+        page.Children.Add(_hdr);
+        page.Children.Add(Hint("Convierte el video SDR a HDR. Requiere HDR activado en Windows."));
         _hdrOptions = new StackPanel { Spacing = 4 };
         _peakValue = new TextBlock { Opacity = 0.7, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right };
         AddSlider(_hdrOptions, "Brillo máximo", 0, 2000, 50, () => _settings.HdrPeakNits, v => _settings.HdrPeakNits = v < 400 ? 0 : (int)v,
@@ -282,11 +306,17 @@ internal sealed class EnhancePanel : StackPanel
             Commit();
         };
         _hdrOptions.Children.Add(hdrReset);
-        Children.Add(_hdrOptions);
+        page.Children.Add(_hdrOptions);
 
         _note = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Visibility = Visibility.Collapsed };
         if (Resource<Brush>("BvVoltBrush") is { } volt) _note.Foreground = volt;
-        Children.Add(_note);
+        _header.Children.Add(_note);
+
+        AddPage("Imagen", _pImage);
+        AddPage("Escala · HDR", _pScale);
+        AddPage("Fluidez", _pMotion);
+        AddPage("Color", _pColor);
+        Select(0);
 
         Load();
         _nr.Toggled += (_, _) => { if (_loading) return; Nr.Enabled = _nr.IsOn; Commit(); };
@@ -378,6 +408,46 @@ internal sealed class EnhancePanel : StackPanel
         _debounce.Start();
     }
 
+    // ---- pages ---------------------------------------------------------------------------
+
+    /// <summary>Adds a tab (hosts add Audio, Stream, Display… next to the enhancement ones).</summary>
+    public void AddPage(string title, UIElement content, int at = -1)
+    {
+        var tab = new ToggleButton
+        {
+            Content = title,
+            Padding = new Thickness(11, 5, 11, 6),
+            FontSize = 12.5,
+            CornerRadius = new CornerRadius(7),
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        };
+        var index = at < 0 ? _pages.Count : at;
+        tab.Click += (_, _) => Select(_pages.FindIndex(p => p.Tab == tab));
+        _pages.Insert(index, (title, tab, content));
+        _tabs.Children.Insert(index, tab);
+    }
+
+    public void Select(int index)
+    {
+        if (index < 0 || index >= _pages.Count) return;
+        for (int i = 0; i < _pages.Count; i++) _pages[i].Tab.IsChecked = i == index;
+        _scroller.Content = _pages[index].Content;
+        _scroller.ChangeView(null, 0, null, true);
+    }
+
+    /// <summary>Selects a tab by its title (e.g. "Imagen").</summary>
+    public void Select(string title) => Select(_pages.FindIndex(p => p.Title == title));
+
+    private static StackPanel Page() => new() { Spacing = 8, Padding = new Thickness(0, 2, 0, 12) };
+
+    private static Rectangle Divider() => new()
+    {
+        Height = 1,
+        Margin = new Thickness(0, 8, 0, 8),
+        Fill = Resource<Brush>("BvBorderBrush"),
+    };
+
     // ---- builders ------------------------------------------------------------------------
 
     private static StackPanel Section(string _, bool expanded = false) => new() { Spacing = 6 };
@@ -447,8 +517,15 @@ internal sealed class EnhancePanel : StackPanel
         return combo;
     }
 
-    private static TextBlock Caption(string text) =>
-        new() { Text = text, FontSize = 12, Opacity = 0.8, Margin = new Thickness(0, 4, 0, 0) };
+    private static TextBlock Caption(string text) => new()
+    {
+        Text = text.ToUpperInvariant(),
+        FontSize = 11,
+        FontWeight = FontWeights.SemiBold,
+        CharacterSpacing = 60,
+        Foreground = Resource<Brush>("BvSubtleBrush"),
+        Margin = new Thickness(0, 6, 0, 0),
+    };
 
     private static TextBlock Hint(string text) =>
         new() { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.65, Margin = new Thickness(0, -4, 0, 2) };

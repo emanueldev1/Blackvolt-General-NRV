@@ -457,7 +457,7 @@ typedef struct bv_enhance_settings {
     float nr_stability;         /* 0..1 */
     /* --- frame interpolation (any D3D12 GPU) and A/B comparison */
     uint32_t interpolation;     /* frames shown per source frame, 1 (off) .. 4; capped by the display refresh */
-    uint32_t compare;           /* 1 = original on the left half of the picture */
+    uint32_t compare;           /* 1 = original on the left half of the picture, 2 = original on all of it */
     uint32_t denoise;           /* video denoise before NR: 0 off, 1 gentle, 2 medium, 3 strong */
     uint32_t scaler;            /* with vsr: 0 RTX VSR (NVIDIA Image Scaling when VSR is unavailable), 1 NIS */
     float sharpness;            /* NIS sharpness 0..1 */

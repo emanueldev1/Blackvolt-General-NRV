@@ -15,7 +15,9 @@
     <KeyboardAccelerator Key="S" Invoked="OnScreenshotAccel" />
     <KeyboardAccelerator Key="C" Invoked="OnCompareAccel" />
     <KeyboardAccelerator Key="F11" Invoked="OnFullscreenAccel" />
-    <KeyboardAccelerator Key="V" Invoked="OnCycleSubtitles" />
+    <KeyboardAccelerator Key="B" Invoked="OnCycleSubtitles" />
+    <KeyboardAccelerator Key="F10" Invoked="OnToggleStats" />
+    <KeyboardAccelerator Key="F3" Invoked="OnToggleStats" />
     <KeyboardAccelerator Key="F" Invoked="OnFullscreenAccel" />
     <KeyboardAccelerator Key="Escape" Invoked="OnEscapeAccel" />
     <KeyboardAccelerator Key="Up" Invoked="OnFaster" />
@@ -23,21 +25,26 @@
     <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenAccel" />
   </Page.KeyboardAccelerators>
 
-  <Grid Background="Black" PointerMoved="OnPointerMoved" DoubleTapped="OnDoubleTapped">
+  <Grid x:Name="Root" Background="Black" PointerMoved="OnPointerMoved" DoubleTapped="OnDoubleTapped"
+        IsTabStop="True" KeyDown="OnRootKeyDown" KeyUp="OnRootKeyUp">
     <SwapChainPanel x:Name="Video" SizeChanged="OnVideoSizeChanged"
                     CompositionScaleChanged="OnCompositionScaleChanged" />
 
     <!-- Empty state -->
-    <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
-      <Border Width="72" Height="72" CornerRadius="36" HorizontalAlignment="Center"
-              BorderBrush="{StaticResource BvVoltBrush}" BorderThickness="1.5">
-        <FontIcon Glyph="&#xE768;" FontSize="26" Foreground="{StaticResource BvVoltBrush}" />
+    <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" MaxWidth="460">
+      <Border Width="76" Height="76" CornerRadius="20" HorizontalAlignment="Center"
+              Background="{StaticResource BvPrimarySoftBrush}" BorderBrush="#403B82F6" BorderThickness="1">
+        <FontIcon Glyph="&#xE768;" FontSize="28" Foreground="{StaticResource BvVoltBrush}" />
       </Border>
-      <TextBlock Text="Suelta un video aquí" HorizontalAlignment="Center"
-                 Style="{StaticResource SubtitleTextBlockStyle}" Foreground="White" />
-      <TextBlock Text="o pulsa Ctrl+O para abrir uno" HorizontalAlignment="Center" Foreground="#99FFFFFF" />
-      <Button Content="Abrir archivo" HorizontalAlignment="Center" Click="OnOpen"
-              Style="{StaticResource AccentButtonStyle}" Margin="0,6,0,0" />
+      <TextBlock Text="Suelta un vídeo aquí" HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="White" />
+      <TextBlock Text="o ábrelo con Ctrl+O. DLSS NR, RTX VSR, TrueHDR e interpolación se aplican en tiempo real; ajústalos con la tecla Inicio."
+                 HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource BvMutedBrush}" />
+      <Button HorizontalAlignment="Center" Click="OnOpen" Style="{StaticResource BvPrimaryButtonStyle}" Margin="0,6,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+          <TextBlock Text="Abrir archivo" />
+        </StackPanel>
+      </Button>
     </StackPanel>
 
     <!-- Stats overlay -->
@@ -54,74 +61,81 @@
 
     <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" VerticalAlignment="Top" Margin="16" MaxWidth="640" />
     <InfoBar x:Name="ShotBar" Severity="Success" IsOpen="False" VerticalAlignment="Bottom" HorizontalAlignment="Right"
-             Margin="16,16,16,96" MaxWidth="520" />
+             Margin="16,16,16,120" MaxWidth="520" />
 
-    <!-- Transport -->
-    <Grid x:Name="Transport" VerticalAlignment="Bottom" Padding="20,40,20,14" Visibility="Collapsed">
-      <Grid.Background>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-          <GradientStop Color="#00000000" Offset="0" />
-          <GradientStop Color="#CC000000" Offset="1" />
-        </LinearGradientBrush>
-      </Grid.Background>
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
+    <!-- "Locked" / "showing original" hints -->
+    <Border x:Name="HintPill" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0"
+            Style="{StaticResource BvPanelStyle}" CornerRadius="999" Padding="16,8" Visibility="Collapsed"
+            IsHitTestVisible="False">
+      <TextBlock x:Name="HintText" Foreground="White" FontSize="13" />
+    </Border>
 
-      <Slider x:Name="Timeline" Minimum="0" StepFrequency="0.01" IsThumbToolTipEnabled="False"
-              ValueChanged="OnTimelineChanged" PointerCaptureLost="OnTimelineReleased" />
+    <!-- Transport: a floating bar that auto-hides while playing -->
+    <Border x:Name="Transport" VerticalAlignment="Bottom" Margin="16,0,16,16" Visibility="Collapsed"
+            Style="{StaticResource BvPanelStyle}" CornerRadius="16" Padding="14,6,10,8" MaxWidth="1180">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-      <Grid Grid.Row="1" ColumnSpacing="10">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <Button x:Name="PlayButton" Click="OnPlayClick" Width="44" Height="36" Background="Transparent"
-                BorderThickness="0" ToolTipService.ToolTip="Reproducir / pausa (Espacio)">
-          <FontIcon x:Name="PlayIcon" Glyph="&#xE769;" Foreground="White" />
-        </Button>
-        <TextBlock x:Name="TimeText" Grid.Column="1" VerticalAlignment="Center" Foreground="White"
-                   FontFamily="Cascadia Mono, Consolas" FontSize="13" Text="0:00 / 0:00" />
-        <TextBlock x:Name="SourceText" Grid.Column="2" VerticalAlignment="Center" Foreground="#99FFFFFF"
-                   TextTrimming="CharacterEllipsis" Margin="12,0" />
-        <FontIcon Grid.Column="3" Glyph="&#xE767;" Foreground="White" FontSize="14" />
-        <Slider x:Name="Volume" Grid.Column="4" Width="110" Minimum="0" Maximum="100" Value="100"
-                VerticalAlignment="Center" ValueChanged="OnVolumeChanged" />
-        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4">
-          <Button x:Name="EnhanceButton" Background="Transparent" BorderThickness="0"
-                  ToolTipService.ToolTip="Mejora de video (RTX)">
-            <FontIcon Glyph="&#xE790;" Foreground="White" FontSize="14" />
+        <Slider x:Name="Timeline" Minimum="0" StepFrequency="0.01" IsThumbToolTipEnabled="False"
+                ValueChanged="OnTimelineChanged" PointerCaptureLost="OnTimelineReleased" />
+
+        <Grid Grid.Row="1" ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Button x:Name="PlayButton" Click="OnPlayClick" Style="{StaticResource BvOverlayButtonStyle}"
+                  ToolTipService.ToolTip="Reproducir / pausa (Espacio)">
+            <FontIcon x:Name="PlayIcon" Glyph="&#xE769;" FontSize="14" />
           </Button>
-          <Button x:Name="CaptionsButton" Background="Transparent" BorderThickness="0"
-                  ToolTipService.ToolTip="Subtítulos y audio (V)">
-            <FontIcon Glyph="&#xED1E;" Foreground="White" FontSize="14" />
-          </Button>
-          <Button x:Name="SpeedButton" Background="Transparent" BorderThickness="0" MinWidth="44"
-                  ToolTipService.ToolTip="Velocidad (↑ / ↓)">
-            <TextBlock x:Name="SpeedText" Text="1×" Foreground="White" FontSize="13" FontFamily="Cascadia Mono, Consolas" />
-          </Button>
-          <Button Click="OnScreenshot" Background="Transparent" BorderThickness="0"
-                  ToolTipService.ToolTip="Captura de pantalla (S)">
-            <FontIcon Glyph="&#xE722;" Foreground="White" FontSize="14" />
-          </Button>
-          <Button Click="OnToggleStatsClick" Background="Transparent" BorderThickness="0"
-                  ToolTipService.ToolTip="Estadísticas (I)">
-            <FontIcon Glyph="&#xE9D9;" Foreground="White" FontSize="14" />
-          </Button>
-          <Button Click="OnOpen" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Abrir (Ctrl+O)">
-            <FontIcon Glyph="&#xE8E5;" Foreground="White" FontSize="14" />
-          </Button>
-          <Button Click="OnFullscreenClick" Background="Transparent" BorderThickness="0"
-                  ToolTipService.ToolTip="Pantalla completa (F11, doble clic)">
-            <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" Foreground="White" FontSize="14" />
-          </Button>
-        </StackPanel>
+          <TextBlock x:Name="TimeText" Grid.Column="1" VerticalAlignment="Center" Foreground="White"
+                     FontFamily="Cascadia Mono, Consolas" FontSize="12.5" Text="0:00 / 0:00" Margin="6,0,0,0" />
+          <TextBlock x:Name="SourceText" Grid.Column="2" VerticalAlignment="Center" Foreground="{StaticResource BvMutedBrush}"
+                     TextTrimming="CharacterEllipsis" Margin="12,0" FontSize="13" />
+          <FontIcon Grid.Column="3" Glyph="&#xE767;" Foreground="White" FontSize="13" />
+          <Slider x:Name="Volume" Grid.Column="4" Width="100" Minimum="0" Maximum="100" Value="100"
+                  VerticalAlignment="Center" ValueChanged="OnVolumeChanged" />
+          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4" Margin="6,0,0,0">
+            <Button x:Name="EnhanceButton" Click="OnToggleSheet" Style="{StaticResource BvOverlayButtonStyle}"
+                    ToolTipService.ToolTip="Panel rápido: NR, VSR, HDR, fluidez, color… (Inicio)">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <FontIcon Glyph="&#xE790;" FontSize="14" />
+                <TextBlock Text="Mejoras" FontSize="12.5" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="CaptionsButton" Style="{StaticResource BvOverlayButtonStyle}"
+                    ToolTipService.ToolTip="Subtítulos y audio (B)">
+              <FontIcon Glyph="&#xED1E;" FontSize="14" />
+            </Button>
+            <Button x:Name="SpeedButton" Style="{StaticResource BvOverlayButtonStyle}" MinWidth="46"
+                    ToolTipService.ToolTip="Velocidad (↑ / ↓)">
+              <TextBlock x:Name="SpeedText" Text="1×" FontSize="12.5" FontFamily="Cascadia Mono, Consolas" />
+            </Button>
+            <Button Click="OnScreenshot" Style="{StaticResource BvOverlayButtonStyle}"
+                    ToolTipService.ToolTip="Captura de pantalla (S)">
+              <FontIcon Glyph="&#xE722;" FontSize="14" />
+            </Button>
+            <Button Click="OnToggleStatsClick" Style="{StaticResource BvOverlayButtonStyle}"
+                    ToolTipService.ToolTip="Estadísticas (I · F3)">
+              <FontIcon Glyph="&#xE9D9;" FontSize="14" />
+            </Button>
+            <Button Click="OnOpen" Style="{StaticResource BvOverlayButtonStyle}" ToolTipService.ToolTip="Abrir (Ctrl+O)">
+              <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+            </Button>
+            <Button Click="OnFullscreenClick" Style="{StaticResource BvOverlayButtonStyle}"
+                    ToolTipService.ToolTip="Pantalla completa (F11, doble clic)">
+              <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" FontSize="14" />
+            </Button>
+          </StackPanel>
+        </Grid>
       </Grid>
-    </Grid>
+    </Border>
   </Grid>
 </Page>

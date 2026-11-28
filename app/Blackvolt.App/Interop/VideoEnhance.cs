@@ -152,7 +152,7 @@ internal static partial class NativeEnhance
             NrAntiFlicker = (uint)Math.Clamp(n.AntiFlicker, 0, 4),
             NrStability = (float)n.Stability,
             Interpolation = (uint)Math.Clamp(s.Interpolation, 1, 4),
-            Compare = s.Compare ? 1u : 0u,
+            Compare = s.ShowOriginal ? 2u : s.Compare ? 1u : 0u,
             Denoise = (uint)Math.Clamp(s.Denoise, 0, 3),
             Scaler = s.Scaler == 1 ? 1u : 0u,
             Sharpness = (float)Math.Clamp(s.Sharpness, 0, 1),

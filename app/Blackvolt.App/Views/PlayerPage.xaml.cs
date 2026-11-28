@@ -25,13 +25,19 @@ public sealed partial class PlayerPage : Page
     private bool _updatingTimeline;
     private SessionTracker? _session;
     private DateTime _lastPointerMove = DateTime.UtcNow;
+    private readonly QuickSheet _sheet;
+    private readonly UiSettings _ui = AppSettings.Current.Ui;
+    private bool _locked, _cursorHidden;
+    private DateTime _hintUntil;
 
     public PlayerPage()
     {
         InitializeComponent();
         _timer.Tick += (_, _) => Tick();
         _enhance.Changed += () => _player?.SetEnhance(AppSettings.Current.Video);
-        EnhanceButton.Flyout = new Flyout { Content = _enhance };
+        _sheet = new QuickSheet("Panel rápido", _enhance) { Margin = new Thickness(12, 12, 12, 104) };
+        _sheet.OpenChanged += open => { if (open) ShowChrome(); else Root.Focus(FocusState.Programmatic); };
+        Root.Children.Add(_sheet);
         StatsPanel.Child = _perf;
         var speeds = new MenuFlyout();
         foreach (var r in Speeds)
@@ -101,6 +107,11 @@ public sealed partial class PlayerPage : Page
             _player.Open(url);
             _player.Play();
             _session = new SessionTracker(url.StartsWith("capture:", StringComparison.Ordinal) ? "Captura" : "Reproductor", title);
+            var kind = url.StartsWith("capture:", StringComparison.Ordinal) ? "capture"
+                : url.StartsWith("screen:", StringComparison.Ordinal) ? "screen"
+                : File.Exists(url) ? "file" : "url";
+            AppSettings.Current.Ui.AddRecent(kind, title, url);
+            AppSettings.Current.Save();
         }
         catch (EngineException ex)
         {
@@ -306,10 +317,15 @@ public sealed partial class PlayerPage : Page
     }
 
     private void OnFullscreenAccel(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs e) { e.Handled = true; SetFullscreen(!IsFullscreen); }
-    private void OnEscapeAccel(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs e) { if (IsFullscreen) { e.Handled = true; SetFullscreen(false); } }
+    private void OnEscapeAccel(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs e)
+    {
+        if (_sheet.IsOpen) { e.Handled = true; _sheet.IsOpen = false; return; }
+        if (IsFullscreen) { e.Handled = true; SetFullscreen(false); }
+    }
     private void OnFullscreenClick(object sender, RoutedEventArgs e) => SetFullscreen(!IsFullscreen);
     private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
+        if (_locked || _sheet.Contains(e.OriginalSource as DependencyObject)) return;
         if (EmptyState.Visibility == Visibility.Collapsed) SetFullscreen(!IsFullscreen);
     }
 
@@ -340,6 +356,8 @@ public sealed partial class PlayerPage : Page
         _session?.Finish();
         _player.Open(path);
         _session = new SessionTracker("Reproductor", Path.GetFileName(path));
+        AppSettings.Current.Ui.AddRecent("file", Path.GetFileName(path), path);
+        AppSettings.Current.Save();
         SourceText.Text = Path.GetFileName(path);
         EmptyState.Visibility = Visibility.Collapsed;
         Transport.Visibility = Visibility.Visible;
@@ -375,11 +393,23 @@ public sealed partial class PlayerPage : Page
         }
         if (!live) TimeText.Text = $"{Format(info.PositionS)} / {Format(info.DurationS)}";
 
-        // Hide the transport after 3 s without mouse movement while playing.
-        if (info.State == State.Playing && Transport.Visibility == Visibility.Visible &&
-            (DateTime.UtcNow - _lastPointerMove).TotalSeconds > 3 && !_scrubbing)
+        // Hide the transport and the cursor while playing (not while the panel is open).
+        var hideAfter = _ui.AutoHideSeconds;
+        if (info.State == State.Playing && !_scrubbing && !_sheet.IsOpen &&
+            (_locked || (hideAfter > 0 && (DateTime.UtcNow - _lastPointerMove).TotalSeconds > hideAfter)))
         {
             Transport.Visibility = Visibility.Collapsed;
+            if (!_cursorHidden) { SetCursor(0); _cursorHidden = true; }
+        }
+        if (HintPill.Visibility == Visibility.Visible && DateTime.UtcNow > _hintUntil) HintPill.Visibility = Visibility.Collapsed;
+        if (_sheet.IsOpen)
+        {
+            var e2 = _player.EnhanceStatus;
+            _sheet.Subtitle = info.Width > 0
+                ? $"{info.Width}×{info.Height} · {info.Fps:0.##} fps" +
+                  (e2.Flags.HasFlag(NativeEnhance.Flags.NeuralActive) ? $" · NR {e2.GpuNrTotalMs:0.0} ms" : "") +
+                  (e2.GpuTotalMs > 0 ? $" · GPU {e2.GpuTotalMs:0.0} ms" : "")
+                : "Abre un vídeo para empezar";
         }
 
         UpdateSubtitle(info);
@@ -517,10 +547,71 @@ public sealed partial class PlayerPage : Page
     private void OnVolumeChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
         _player?.SetVolume((float)(e.NewValue / 100.0));
 
-    private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
+    private void OnPointerMoved(object sender, PointerRoutedEventArgs e) => ShowChrome();
+
+    // ---- quick panel, lock, hold-to-compare --------------------------------------------------
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint SetCursor(nint cursor);
+
+    private void ShowChrome()
     {
         _lastPointerMove = DateTime.UtcNow;
-        if (EmptyState.Visibility == Visibility.Collapsed) Transport.Visibility = Visibility.Visible;
+        _cursorHidden = false;
+        if (!_locked && EmptyState.Visibility == Visibility.Collapsed) Transport.Visibility = Visibility.Visible;
+    }
+
+    private void Hint(string text, double seconds = 1.8)
+    {
+        HintText.Text = text;
+        HintPill.Visibility = Visibility.Visible;
+        _hintUntil = DateTime.UtcNow.AddSeconds(seconds);
+    }
+
+    private void OnToggleSheet(object sender, RoutedEventArgs e) => _sheet.Toggle();
+
+    private static bool CtrlDown() =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    private void OnRootKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.Home:
+                _sheet.Toggle();
+                e.Handled = true;
+                return;
+            case Windows.System.VirtualKey.Escape when _sheet.IsOpen:
+                _sheet.IsOpen = false;
+                e.Handled = true;
+                return;
+        }
+        if (_sheet.Contains(e.OriginalSource as DependencyObject)) return;
+        if (e.Key == Windows.System.VirtualKey.L && CtrlDown())
+        {
+            _locked = !_locked;
+            if (_locked) Transport.Visibility = Visibility.Collapsed;
+            else ShowChrome();
+            Hint(_locked ? "Controles bloqueados · Ctrl+L para desbloquear" : "Controles desbloqueados");
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.V && !AppSettings.Current.Video.ShowOriginal)
+        {
+            AppSettings.Current.Video.ShowOriginal = true;
+            _player?.SetEnhance(AppSettings.Current.Video);
+            Hint("Original · suelta V para volver", 60);
+            e.Handled = true;
+        }
+    }
+
+    private void OnRootKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.V || !AppSettings.Current.Video.ShowOriginal) return;
+        AppSettings.Current.Video.ShowOriginal = false;
+        _player?.SetEnhance(AppSettings.Current.Video);
+        HintPill.Visibility = Visibility.Collapsed;
+        e.Handled = true;
     }
 
     private void OnDragOver(object sender, DragEventArgs e)

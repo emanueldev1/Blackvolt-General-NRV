@@ -11,6 +11,7 @@ internal sealed class AppSettings
     public SubtitleSettings Subtitles { get; set; } = new();
     public ExportSettings Export { get; set; } = new();
     public UpdateSettings Update { get; set; } = new();
+    public UiSettings Ui { get; set; } = new();
     /// <summary>User presets: every video enhancement setting under a name.</summary>
     public Dictionary<string, VideoSettings> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -73,6 +74,8 @@ internal sealed class VideoSettings
     public bool ShowStats { get; set; }
     public int Interpolation { get; set; } = 1;          // frames shown per source frame, 1 = off .. 4
     public bool Compare { get; set; }                    // A/B: original on the left half
+    /// <summary>While the user holds V: the original on the whole picture. Not saved.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool ShowOriginal { get; set; }
     public int Denoise { get; set; }                     // 0 off, 1 gentle, 2 medium, 3 strong
     public int Scaler { get; set; }                      // 0 RTX VSR (NIS fallback), 1 NVIDIA Image Scaling
     public double Sharpness { get; set; } = 0.25;        // NIS 0..1
@@ -246,4 +249,38 @@ internal sealed class UpdateSettings
     public bool AutoCheck { get; set; } = true;
     public DateTime LastCheckUtc { get; set; }
     public string SkippedTag { get; set; } = "";
+}
+
+/// <summary>Window, navigation and in-session comfort options.</summary>
+internal sealed class UiSettings
+{
+    public string StartPage { get; set; } = "home";        // home | player | remote | capture | last
+    public string LastPage { get; set; } = "home";
+    public bool RememberWindow { get; set; } = true;
+    public int WindowX { get; set; } = int.MinValue;
+    public int WindowY { get; set; } = int.MinValue;
+    public int WindowWidth { get; set; } = 1360;
+    public int WindowHeight { get; set; } = 860;
+    public bool WindowMaximized { get; set; }
+    public bool PaneOpen { get; set; } = true;
+    public double AutoHideSeconds { get; set; } = 1.6;     // controls and cursor over video
+    public int FpsCorner { get; set; } = 1;                // 0 off, 1 top right, 2 top left, 3 bottom right, 4 bottom left
+    public bool ReduceMotion { get; set; }
+    public bool ConfirmDisconnect { get; set; } = true;
+    public List<RecentItem> Recent { get; set; } = [];
+
+    public void AddRecent(string kind, string title, string target)
+    {
+        Recent.RemoveAll(r => r.Target.Equals(target, StringComparison.OrdinalIgnoreCase));
+        Recent.Insert(0, new RecentItem { Kind = kind, Title = title, Target = target, WhenUtc = DateTime.UtcNow });
+        if (Recent.Count > 12) Recent.RemoveRange(12, Recent.Count - 12);
+    }
+}
+
+internal sealed class RecentItem
+{
+    public string Kind { get; set; } = "";   // file | url | console | capture
+    public string Title { get; set; } = "";
+    public string Target { get; set; } = "";
+    public DateTime WhenUtc { get; set; }
 }

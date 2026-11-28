@@ -55,6 +55,12 @@ public partial class App : Application
             Engine?.Dispose();
         };
         MainWindow.Activate();
+        // "Open with Blackvolt" / a file dropped on the exe: play it right away.
+        var file = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal) && File.Exists(a));
+        if (file is not null) MainWindow.Go("player", new Interop.OpenMedia(Path.GetFullPath(file), Path.GetFileName(file)));
+        var args = Environment.GetCommandLineArgs();
+        var pageAt = Array.FindIndex(args, a => a.Equals("--page", StringComparison.OrdinalIgnoreCase));
+        if (file is null && pageAt > 0 && pageAt + 1 < args.Length) MainWindow.Go(args[pageAt + 1]);
         _ = Services.Updater.CheckInBackgroundAsync();
         // Like Veyra's package, DLSS NR should just be there: fetch it once on RTX GPUs. The
         // installer passes --install-nr when the user ticked "install DLSS NR".

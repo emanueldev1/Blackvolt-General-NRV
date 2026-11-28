@@ -5,6 +5,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.System;
 using StreamState = Blackvolt.App.Interop.NativeRemote.StreamState;
@@ -27,20 +28,158 @@ public sealed partial class StreamPage : Page
     private SessionTracker? _session;
     private DateTime _lastPointerMove = DateTime.UtcNow;
     private StreamState _lastState = StreamState.Idle;
+    private readonly QuickSheet _sheet;
+    private readonly UiSettings _ui = AppSettings.Current.Ui;
+    private bool _locked, _cursorHidden;
+    private DateTime _hintUntil;
+    private readonly TextBlock _liveVideo = Live(), _liveNet = Live(), _liveFrames = Live(), _livePad = Live();
+    private ToggleSwitch? _statsToggle;
 
     public StreamPage()
     {
         InitializeComponent();
         _timer.Tick += (_, _) => Tick();
         _enhance.Changed += () => _stream?.SetEnhance(AppSettings.Current.Video);
-        EnhanceButton.Flyout = new Flyout { Content = _enhance };
+        _enhance.AddPage("Sesión", BuildSessionPage());
+        _sheet = new QuickSheet("Panel rápido", _enhance);
+        _sheet.OpenChanged += open =>
+        {
+            if (open) ShowChrome();
+            else Root.Focus(FocusState.Programmatic);
+        };
+        Root.Children.Add(_sheet);
         StatsPanel.Child = _perf;
+    }
+
+    // ---- quick panel: session tab ----------------------------------------------------------
+
+    private static TextBlock Live() => new() { FontSize = 12.5, FontFamily = new FontFamily("Cascadia Mono, Consolas"), TextWrapping = TextWrapping.Wrap };
+
+    private StackPanel BuildSessionPage()
+    {
+        var page = new StackPanel { Spacing = 8, Padding = new Thickness(0, 2, 0, 12) };
+        TextBlock Caption(string t) => new()
+        {
+            Text = t, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = 60,
+            Foreground = (Brush)Application.Current.Resources["BvSubtleBrush"], Margin = new Thickness(0, 6, 0, 0),
+        };
+        page.Children.Add(Caption("EN VIVO"));
+        var live = new Border
+        {
+            Background = (Brush)Application.Current.Resources["BvSurface2Brush"],
+            BorderBrush = (Brush)Application.Current.Resources["BvBorderBrush"],
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 10, 12, 10),
+        };
+        var lines = new StackPanel { Spacing = 4 };
+        lines.Children.Add(_liveVideo);
+        lines.Children.Add(_liveNet);
+        lines.Children.Add(_liveFrames);
+        lines.Children.Add(_livePad);
+        live.Child = lines;
+        page.Children.Add(live);
+
+        page.Children.Add(Caption("CONSOLA"));
+        var actions = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
+        actions.ColumnDefinitions.Add(new ColumnDefinition());
+        actions.ColumnDefinitions.Add(new ColumnDefinition());
+        void Act(int i, string glyph, string text, string tip, Action run)
+        {
+            var b = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            content.Children.Add(new FontIcon { Glyph = glyph, FontSize = 13 });
+            content.Children.Add(new TextBlock { Text = text, FontSize = 12.5 });
+            b.Content = content;
+            ToolTipService.SetToolTip(b, tip);
+            b.Click += (_, _) => run();
+            Grid.SetRow(b, i / 2);
+            Grid.SetColumn(b, i % 2);
+            if (actions.RowDefinitions.Count <= i / 2) actions.RowDefinitions.Add(new RowDefinition());
+            actions.Children.Add(b);
+        }
+        Act(0, "\uE80F", "Botón PS", "Abre el menú de la consola (P)", () => _stream?.PsButton());
+        Act(1, "\uE72C", "Imagen nítida", "Pide un fotograma clave si la imagen se ve con artefactos", () => _stream?.RequestKeyframe());
+        Act(2, "\uE722", "Captura", "Guarda una captura en Imágenes (F12)", TakeScreenshot);
+        Act(3, "\uE708", "Reposo", "Pone la consola en modo reposo", () => _stream?.SleepConsole());
+        page.Children.Add(actions);
+
+        page.Children.Add(Caption("PANTALLA"));
+        _statsToggle = new ToggleSwitch { Header = "Estadísticas sobre el juego (F3)", IsOn = AppSettings.Current.RemotePlay.ShowStats };
+        _statsToggle.Toggled += (_, _) => { if (_statsToggle.IsOn != (StatsPanel.Visibility == Visibility.Visible)) ToggleStats(); };
+        page.Children.Add(_statsToggle);
+        var hide = new ComboBox { Header = "Ocultar controles y cursor", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var hideOptions = new (string Label, double Seconds)[] { ("Tras 1,5 s", 1.6), ("Tras 3 s", 3), ("Tras 6 s", 6), ("Nunca", 0) };
+        foreach (var (label, _) in hideOptions) hide.Items.Add(label);
+        hide.SelectedIndex = Math.Max(0, Array.FindIndex(hideOptions, o => Math.Abs(o.Seconds - _ui.AutoHideSeconds) < 0.2));
+        hide.SelectionChanged += (_, _) => { _ui.AutoHideSeconds = hideOptions[Math.Max(0, hide.SelectedIndex)].Seconds; AppSettings.Current.Save(); };
+        page.Children.Add(hide);
+        var fullscreen = new Button { Content = "Pantalla completa (F11 · doble clic)", HorizontalAlignment = HorizontalAlignment.Stretch };
+        fullscreen.Click += (_, _) => ToggleFullscreen();
+        page.Children.Add(fullscreen);
+
+        page.Children.Add(Caption("TECLADO COMO MANDO"));
+        page.Children.Add(new TextBlock
+        {
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12, LineHeight = 19,
+            Foreground = (Brush)Application.Current.Resources["BvMutedBrush"],
+            Text = "WASD        stick izquierdo\nFlechas     cruceta\nEnter/Esp.  ✕     Retroceso  ○\nQ / E       □ / △\n1 / 3       L1 / R1\n2 / 4       L2 / R2\nO           Options   T  panel táctil\nP           botón PS\n\nInicio      este panel\nV (mant.)   ver el original\nCtrl+L      bloquear controles\nF3 · F10    estadísticas\nF12         captura",
+        });
+
+        var disconnect = new Button { Content = "Desconectar", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 10, 0, 0) };
+        disconnect.Click += (_, _) => OnBack(this, new RoutedEventArgs());
+        page.Children.Add(disconnect);
+        return page;
+    }
+
+    private void TakeScreenshot()
+    {
+        if (_stream is not { } stream) return;
+        var path = NativeEnhance.NewScreenshotPath();
+        _ = Task.Run(() =>
+        {
+            var ok = stream.Screenshot(path) == NativeEngine.Result.Ok;
+            DispatcherQueue.TryEnqueue(() => App.MainWindow?.Toast(ok ? "Captura guardada" : "No se pudo guardar la captura",
+                ok ? path : "Inténtalo de nuevo cuando haya imagen.", ok ? InfoBarSeverity.Success : InfoBarSeverity.Warning, 3.5));
+        });
+    }
+
+    // ---- chrome auto-hide, cursor, lock, hints ----------------------------------------------
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint SetCursor(nint cursor);
+
+    private void ShowChrome()
+    {
+        _lastPointerMove = DateTime.UtcNow;
+        if (!_locked) TopBar.Visibility = Visibility.Visible;
+        _cursorHidden = false;
+    }
+
+    private void Hint(string text, double seconds = 1.8)
+    {
+        HintText.Text = text;
+        HintPill.Visibility = Visibility.Visible;
+        _hintUntil = DateTime.UtcNow.AddSeconds(seconds);
+    }
+
+    private void SetShowOriginal(bool on)
+    {
+        var video = AppSettings.Current.Video;
+        if (video.ShowOriginal == on) return;
+        video.ShowOriginal = on;
+        _stream?.SetEnhance(video);
+        if (on) Hint("Original · suelta V para volver", 60);
+        else HintPill.Visibility = Visibility.Collapsed;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _request = e.Parameter as StreamRequest;
         ConsoleName.Text = _request?.Nickname ?? "";
+        if (_request is not null)
+        {
+            AppSettings.Current.Ui.AddRecent("console", _request.Nickname, _request.Index.ToString());
+            AppSettings.Current.Save();
+        }
         var settings = AppSettings.Current.RemotePlay;
         Volume.Value = settings.Volume * 100;
         StatsPanel.Visibility = settings.ShowStats ? Visibility.Visible : Visibility.Collapsed;
@@ -70,6 +209,7 @@ public sealed partial class StreamPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _timer.Stop();
+        AppSettings.Current.Video.ShowOriginal = false;
         _session?.Finish();
         _session = null;
         _stream?.Dispose(); // stops the session, threads and audio
@@ -148,9 +288,28 @@ public sealed partial class StreamPage : Page
         }
         PadText.Text = info.GamepadConnected != 0 ? info.GamepadText : "Sin mando (usa el teclado)";
 
-        // Auto-hide the bar and cursor-free view after 3 s while playing.
-        if (streaming && (DateTime.UtcNow - _lastPointerMove).TotalSeconds > 3) TopBar.Visibility = Visibility.Collapsed;
-        if (!streaming) TopBar.Visibility = Visibility.Visible;
+        // Auto-hide the bar and the cursor while playing (not while the panel is open).
+        var idle = (DateTime.UtcNow - _lastPointerMove).TotalSeconds;
+        var hideAfter = _ui.AutoHideSeconds;
+        if (streaming && !_sheet.IsOpen && (_locked || (hideAfter > 0 && idle > hideAfter)))
+        {
+            TopBar.Visibility = Visibility.Collapsed;
+            if (!_cursorHidden && (_locked || hideAfter > 0)) { SetCursor(0); _cursorHidden = true; }
+        }
+        if (!streaming && !_locked) TopBar.Visibility = Visibility.Visible;
+        if (HintPill.Visibility == Visibility.Visible && DateTime.UtcNow > _hintUntil) HintPill.Visibility = Visibility.Collapsed;
+
+        if (_sheet.IsOpen)
+        {
+            _sheet.Subtitle = streaming
+                ? $"{_request?.Nickname} · {info.Width}×{info.Height} · {info.Fps:0} fps" +
+                  (enhance.Flags.HasFlag(NativeEnhance.Flags.NeuralActive) ? $" · NR {enhance.GpuNrTotalMs:0.0} ms" : "")
+                : "Sin señal todavía";
+            _liveVideo.Text = $"Vídeo  {info.Width}×{info.Height} · {info.CodecText} · {info.Fps:0.0} fps · {(info.HardwareDecode != 0 ? "GPU" : "CPU")}";
+            _liveNet.Text = $"Red    {info.BitrateMbps:0.0} Mbps · RTT {info.RttMs:0} ms";
+            _liveFrames.Text = $"Fotog. {info.FramesLost} perdidos · {info.FramesRecovered} recuperados · {info.Reconnects} reconex.";
+            _livePad.Text = $"Mando  {(info.GamepadConnected != 0 ? info.GamepadText : "teclado")}";
+        }
 
         if (StatsPanel.Visibility == Visibility.Visible) UpdateStats(info, enhance);
     }
@@ -212,19 +371,34 @@ public sealed partial class StreamPage : Page
 
     // ---- keyboard as a gamepad -------------------------------------------------------------
 
+    private static bool CtrlDown() =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // The quick panel: Home toggles it, Esc closes it; keys typed in it stay in it.
+        if (e.Key == VirtualKey.Home) { _sheet.Toggle(); e.Handled = true; return; }
+        if (e.Key == VirtualKey.Escape && _sheet.IsOpen) { _sheet.IsOpen = false; e.Handled = true; return; }
+        if (_sheet.Contains(e.OriginalSource as DependencyObject)) return;
+        if (e.Key == VirtualKey.L && CtrlDown())
+        {
+            _locked = !_locked;
+            if (_locked) TopBar.Visibility = Visibility.Collapsed;
+            else ShowChrome();
+            Hint(_locked ? "Controles bloqueados · Ctrl+L para desbloquear" : "Controles desbloqueados");
+            e.Handled = true;
+            return;
+        }
         switch (e.Key)
         {
+            case VirtualKey.V: SetShowOriginal(true); e.Handled = true; return;
+            case VirtualKey.F10: ToggleStats(); e.Handled = true; return;
             case VirtualKey.F11: ToggleFullscreen(); e.Handled = true; return;
             case VirtualKey.F3: ToggleStats(); e.Handled = true; return;
             case VirtualKey.F12:
                 e.Handled = true;
-                if (_stream is { } stream)
-                {
-                    var path = NativeEnhance.NewScreenshotPath();
-                    _ = Task.Run(() => stream.Screenshot(path));
-                }
+                TakeScreenshot();
                 return;
             case VirtualKey.Escape when IsFullscreen: SetFullscreen(false); e.Handled = true; return;
             case VirtualKey.P: _stream?.PsButton(); e.Handled = true; return;
@@ -235,6 +409,8 @@ public sealed partial class StreamPage : Page
 
     private void OnKeyUp(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == VirtualKey.V) { SetShowOriginal(false); e.Handled = true; return; }
+        if (_sheet.Contains(e.OriginalSource as DependencyObject)) return;
         if (_keys.Remove(e.Key)) SendKeyboardState();
         e.Handled = true;
     }
@@ -285,17 +461,20 @@ public sealed partial class StreamPage : Page
     {
         var show = StatsPanel.Visibility != Visibility.Visible;
         StatsPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (_statsToggle is not null) _statsToggle.IsOn = show;
         AppSettings.Current.RemotePlay.ShowStats = show;
         AppSettings.Current.Save();
     }
 
-    private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
+    private void OnPointerMoved(object sender, PointerRoutedEventArgs e) => ShowChrome();
+
+    private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        _lastPointerMove = DateTime.UtcNow;
-        TopBar.Visibility = Visibility.Visible;
+        if (_locked || _sheet.Contains(e.OriginalSource as DependencyObject)) return;
+        ToggleFullscreen();
     }
 
-    private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e) => ToggleFullscreen();
+    private void OnToggleSheet(object sender, RoutedEventArgs e) => _sheet.Toggle();
     private void OnFullscreen(object sender, RoutedEventArgs e) => ToggleFullscreen();
     private void OnToggleStatsClick(object sender, RoutedEventArgs e) => ToggleStats();
     private void OnPsButton(object sender, RoutedEventArgs e) => _stream?.PsButton();
