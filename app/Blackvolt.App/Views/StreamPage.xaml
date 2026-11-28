@@ -27,10 +27,7 @@
 
     <!-- Live stats -->
     <Border x:Name="StatsPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
-            Margin="16,64,16,16" Padding="14,10" CornerRadius="6" Background="#B3000000">
-      <TextBlock x:Name="StatsText" FontFamily="Cascadia Mono, Consolas" FontSize="12"
-                 Foreground="#E6FFFFFF" LineHeight="18" />
-    </Border>
+            Margin="16,64,16,16" IsHitTestVisible="False" />
 
     <!-- Top bar, auto-hides while playing -->
     <Grid x:Name="TopBar" VerticalAlignment="Top" Padding="12,10,16,30" ColumnSpacing="6">
@@ -70,7 +67,7 @@
           <Button.Flyout>
             <Flyout>
               <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12" LineHeight="20"
-                         Text="WASD        stick izquierdo&#x0a;Flechas     cruceta&#x0a;Enter/Esp.  ✕&#x0a;Retroceso   ○&#x0a;Q / E       □ / △&#x0a;1 / 3       L1 / R1&#x0a;2 / 4       L2 / R2&#x0a;O           Options&#x0a;T           Panel táctil&#x0a;P           Botón PS&#x0a;F11         Pantalla completa&#x0a;F3          Estadísticas" />
+                         Text="WASD        stick izquierdo&#x0a;Flechas     cruceta&#x0a;Enter/Esp.  ✕&#x0a;Retroceso   ○&#x0a;Q / E       □ / △&#x0a;1 / 3       L1 / R1&#x0a;2 / 4       L2 / R2&#x0a;O           Options&#x0a;T           Panel táctil&#x0a;P           Botón PS&#x0a;F11         Pantalla completa&#x0a;F3          Estadísticas&#x0a;F12         Captura de pantalla" />
             </Flyout>
           </Button.Flyout>
         </Button>

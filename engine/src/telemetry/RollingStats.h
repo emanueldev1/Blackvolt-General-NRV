@@ -38,6 +38,16 @@ public:
         count_ = 0;
     }
 
+    // Copies up to `capacity` of the most recent samples, oldest first. Returns how many.
+    std::size_t recent(float* out, std::size_t capacity) const {
+        std::lock_guard lock(mutex_);
+        const std::size_t n = std::min(capacity, count_);
+        if (!out) return n;
+        const std::size_t first = (head_ + Capacity - n) % Capacity;
+        for (std::size_t i = 0; i < n; ++i) out[i] = static_cast<float>(ring_[(first + i) % Capacity]);
+        return n;
+    }
+
     [[nodiscard]] StatsSnapshot snapshot() const {
         std::vector<double> sorted;
         {

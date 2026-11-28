@@ -38,6 +38,13 @@
         <ToggleSwitch x:Name="AutoCheckSwitch" Header="Buscar actualizaciones al iniciar"
                       OnContent="Sí" OffContent="No" Toggled="OnAutoCheckToggled" />
 
+        <ComboBox x:Name="MirrorBox" Header="Servidor de descarga (actualizaciones y DLSS NR)" MinWidth="260"
+                  SelectionChanged="OnMirrorChanged" />
+        <ToggleSwitch x:Name="NrAutoSwitch" Header="Instalar DLSS NR automáticamente en GPUs RTX"
+                      OnContent="Sí" OffContent="No" Toggled="OnNrAutoToggled" />
+        <ToggleSwitch x:Name="ResumeSwitch" Header="Al abrir el Reproductor, retomar la última fuente (archivo en su posición, o captura)"
+                      OnContent="Sí" OffContent="No" Toggled="OnResumeToggled" />
+
         <StackPanel x:Name="UpdatePanel" Spacing="10" Visibility="Collapsed">
           <TextBlock x:Name="UpdateTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
           <ScrollViewer MaxHeight="220">

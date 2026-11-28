@@ -33,6 +33,27 @@ TEST(capture_url_round_trip) {
 #endif
 }
 
+TEST(screen_capture_urls) {
+    CHECK(isCaptureUrl("screen:desktop"));
+#if defined(_WIN32)
+    auto c = parseCaptureUrl("screen:desktop?fps=30&region=1920,0,2560,1441&cursor=0");
+    CHECK(c.has_value());
+    if (c) {
+        CHECK(c->inputFormat == "gdigrab");
+        CHECK(c->target == "desktop");
+        CHECK(option(*c, "offset_x") && *option(*c, "offset_x") == "1920");
+        CHECK(option(*c, "video_size") && *option(*c, "video_size") == "2560x1440"); // even sizes for the encoder
+        CHECK(option(*c, "framerate") && *option(*c, "framerate") == "30");
+        CHECK(option(*c, "draw_mouse") && *option(*c, "draw_mouse") == "0");
+    }
+    c = parseCaptureUrl("screen:title=¿Qué? - Bloc de notas?fps=60");
+    CHECK(c && c->target == "title=¿Qué? - Bloc de notas");
+    CHECK(c && option(*c, "framerate") && *option(*c, "framerate") == "60");
+    CHECK(!parseCaptureUrl("screen:nothing").has_value());
+    CHECK(!parseCaptureUrl("screen:desktop?fps=999").has_value());
+#endif
+}
+
 TEST(capture_url_defaults_and_errors) {
     CHECK(makeCaptureUrl("Cam", "", 0, 0, 0) == "capture:video=Cam");
     CHECK(parseCaptureUrl("capture:video=Cam").has_value());
@@ -55,4 +76,15 @@ TEST(capture_c_api) {
     CHECK(bv_capture_url("", nullptr, 0, 0, 0, buf, sizeof(buf)) == BV_ERR_INVALID_ARGUMENT);
     uint32_t count = 0;
     CHECK(bv_capture_devices(nullptr, 0, &count) == BV_OK);
+}
+
+#include "media/SubtitleDecoder.h"
+
+TEST(ass_events_become_plain_text) {
+    using bv::media::assToPlain;
+    CHECK(assToPlain("0,0,Default,,0,0,0,,Hola {\\i1}mundo{\\i0}\\Nsegunda linea") == "Hola mundo\nsegunda linea");
+    CHECK(assToPlain("12,0,Top,Name,10,10,10,fx,a,b,c") == "a,b,c"); // commas in the text stay
+    CHECK(assToPlain("{\\an8}Arriba") == "Arriba");                    // bare text, no event fields
+    CHECK(assToPlain("0,0,Default,,0,0,0,,  \\N ") == "");
+    CHECK(assToPlain("0,0,Default,,0,0,0,,uno\\hdos") == "uno dos");
 }

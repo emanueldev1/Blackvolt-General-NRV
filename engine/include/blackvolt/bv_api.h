@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BV_API_VERSION 8u
+#define BV_API_VERSION 9u
 
 typedef enum bv_result {
     BV_OK = 0,
@@ -136,6 +136,7 @@ typedef struct bv_runtime_candidate {
     bv_runtime_origin origin;
     char label[96];
     char path[520];
+    uint32_t nr_variant;           /* DLSS NR only: bv_nr_variant the file belongs to, 0 = unknown */
 } bv_runtime_candidate;
 BV_API bv_result BV_CALL bv_runtime_scan(const char* folder, bv_runtime_candidate* out, uint32_t capacity,
                                          uint32_t* count);
@@ -159,7 +160,37 @@ BV_API void BV_CALL bv_set_log_callback(bv_log_fn fn, void* user);
 
 BV_API bv_result BV_CALL bv_engine_runtime_status(bv_engine* engine, bv_feature feature, bv_runtime_status* out);
 
-/* Stage statistics by name: "decode", "enhance", "present", "frame" (end to end). */
+/* DLSS NR builds. Each variant lives in <runtime>/nr/<compat|original>/nvngx_dlssnr.dll. */
+typedef struct bv_nr_runtime_info {
+    uint32_t size;                 /* = sizeof(bv_nr_runtime_info) */
+    uint32_t variant;              /* bv_nr_variant */
+    uint32_t installed;
+    bv_runtime_origin origin;      /* by SHA-256 against the manifest */
+    uint64_t bytes;
+    char version[32];              /* file version, e.g. "310.9.16.0" */
+    char label[96];
+    char sha256[72];
+    char path[520];
+} bv_nr_runtime_info;
+BV_API bv_result BV_CALL bv_nr_runtime_get(uint32_t variant, bv_nr_runtime_info* out);
+/* Copies a nvngx_dlssnr.dll into the user runtime folder for `variant` (atomic replace). */
+BV_API bv_result BV_CALL bv_nr_runtime_import(const char* source_path, uint32_t variant, bv_nr_runtime_info* out);
+BV_API bv_result BV_CALL bv_nr_runtime_remove(uint32_t variant);
+
+/* Last `capacity` samples of a stage, oldest first, in microseconds (frame-time graphs). */
+BV_API bv_result BV_CALL bv_engine_stage_history(bv_engine* engine, const char* stage, float* out, uint32_t capacity,
+                                                 uint32_t* count);
+
+typedef struct bv_gpu_memory {
+    uint32_t size;                 /* = sizeof(bv_gpu_memory) */
+    uint64_t usage_bytes;          /* this process, local (dedicated) segment */
+    uint64_t budget_bytes;         /* what the OS lets this process use */
+    uint64_t dedicated_bytes;      /* adapter total */
+} bv_gpu_memory;
+BV_API bv_result BV_CALL bv_engine_gpu_memory(bv_engine* engine, bv_gpu_memory* out);
+
+/* Stage statistics by name: "decode", "enhance", "present", "frame" (end to end), and the GPU
+ * stages "gpu.frame", "gpu.convert", "gpu.nr", "gpu.nr.composite", "gpu.vsr", "gpu.truehdr". */
 BV_API bv_result BV_CALL bv_engine_stage_stats(bv_engine* engine, const char* stage, bv_stage_stats* out);
 
 /* ------------------------------------------------------------------------------------------
@@ -191,7 +222,25 @@ typedef struct bv_player_info {
     char codec[32];
     char error[256];
     uint32_t live;                 /* 1 = capture device (no duration, no seeking) */
+    uint64_t frames_generated;     /* API 9: interpolated frames shown */
+    int32_t audio_track;           /* stream index playing, -1 none */
+    int32_t subtitle_track;        /* stream index shown, -1 off */
 } bv_player_info;
+
+/* Audio and text-subtitle streams of the open source. */
+typedef struct bv_track {
+    uint32_t size;                 /* = sizeof(bv_track) */
+    int32_t index;                 /* stream index */
+    uint32_t kind;                 /* 0 audio, 1 subtitle */
+    char language[16];
+    char title[96];
+    char codec[32];
+} bv_track;
+BV_API bv_result BV_CALL bv_player_tracks(bv_player* player, bv_track* out, uint32_t capacity, uint32_t* count);
+/* kind 0: audio (reopens at the current position); kind 1: subtitles, index -1 = off. */
+BV_API bv_result BV_CALL bv_player_select_track(bv_player* player, uint32_t kind, int32_t index);
+/* Subtitle text showing now (UTF-8, lines separated by LF); empty string when none. */
+BV_API bv_result BV_CALL bv_player_subtitle(bv_player* player, char* out, uint32_t size);
 
 /* The player renders into a composition swapchain; attach it to a SwapChainPanel. */
 BV_API bv_result BV_CALL bv_player_create(bv_engine* engine, bv_player** out_player);
@@ -204,6 +253,8 @@ BV_API bv_result BV_CALL bv_player_play(bv_player* player);
 BV_API bv_result BV_CALL bv_player_pause(bv_player* player);
 BV_API bv_result BV_CALL bv_player_seek(bv_player* player, double seconds);
 BV_API bv_result BV_CALL bv_player_set_volume(bv_player* player, float volume); /* 0..2 */
+/* Playback speed 0.25..4 with the pitch kept (files only; capture stays at 1). */
+BV_API bv_result BV_CALL bv_player_set_rate(bv_player* player, double rate);
 BV_API bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out);
 
 /* ------------------------------------------------------------------------------------------
@@ -373,12 +424,63 @@ typedef struct bv_enhance_settings {
     uint32_t hdr_saturation;    /* 0..200, 100 = neutral */
     uint32_t hdr_middle_gray;   /* 10..100 */
     uint32_t hdr_peak_nits;     /* 400..2000; 0 = the display's reported peak */
-    /* NVIDIA neural rendering (DLSS NR). Reserved for NVIDIA's official release to third-party apps:
-     * no implementation ships yet, so requesting it reports BV_ENHANCE_NEURAL_UNAVAILABLE. */
+    /* NVIDIA DLSS NR (neural rendering, nvngx_dlssnr.dll). Runs first, at source size or an
+     * internal size, and only the change it makes is applied to the picture. */
     uint32_t neural;
-    uint32_t neural_intensity;  /* 0..100 */
-    uint32_t neural_temporal;   /* 1 = reuse the previous output */
+    uint32_t neural_intensity;  /* model intensity 0..100 */
+    uint32_t neural_temporal;   /* ignored (layout of API 8) */
+    /* --- API 9: runtime and model (changing these recreates the feature) */
+    uint32_t nr_runtime;        /* bv_nr_variant: 0 auto, 1 compatible (RTX 20-50), 2 NVIDIA original (RTX 50) */
+    uint32_t nr_performance_model; /* compatible build: 1 = model B (newer, faster), 0 = model A */
+    uint32_t nr_size;           /* 0 native, 1 1440p, 2 1080p, 3 720p, 4 480p, 125..200 = 25..100 % of the source */
+    /* --- model parameters */
+    int32_t nr_style;           /* 0..2 */
+    float nr_tone;              /* local tone strength 0..1 */
+    float nr_structure;         /* local structure strength 0..1 */
+    float nr_skin;              /* skin structure: < 0 unset, else 0..2 */
+    uint32_t nr_auto_mask;
+    uint32_t nr_ui_correction;
+    /* --- how much of NR's change is applied */
+    float nr_total;             /* 0..5 */
+    float nr_darken, nr_brighten, nr_color, nr_luminance; /* 0..2 each */
+    /* --- picture correction (Oklab) */
+    uint32_t nr_correction;
+    uint32_t nr_correction_auto;   /* 1 = values tuned per style, scaled by nr_correction_amount */
+    float nr_correction_amount;    /* 0..1 */
+    float nr_hue, nr_chroma, nr_highlight, nr_compression; /* 0..1 */
+    float nr_neutral, nr_color_keep, nr_luma_keep, nr_shadow; /* 0..1 */
+    /* --- regions that keep the original picture */
+    uint32_t nr_protect;        /* bv_nr_protect */
+    float nr_feather;           /* px, 0..64 */
+    /* --- anti-flicker: accumulates NR's change where the picture is still */
+    uint32_t nr_anti_flicker;   /* 0 off; still areas: 1 soft (80 ms), 2 strong (180 ms); following motion: 3 soft, 4 strong */
+    float nr_stability;         /* 0..1 */
+    /* --- frame interpolation (any D3D12 GPU) and A/B comparison */
+    uint32_t interpolation;     /* frames shown per source frame, 1 (off) .. 4; capped by the display refresh */
+    uint32_t compare;           /* 1 = original on the left half of the picture */
+    uint32_t denoise;           /* video denoise before NR: 0 off, 1 gentle, 2 medium, 3 strong */
+    uint32_t scaler;            /* with vsr: 0 RTX VSR (NVIDIA Image Scaling when VSR is unavailable), 1 NIS */
+    float sharpness;            /* NIS sharpness 0..1 */
+    /* --- colour (after NR): neutral = 0, 1, 1, 0, 0, 0, 1 */
+    float brightness;           /* -1..1 stops */
+    float contrast;             /* 0..2 */
+    float saturation;           /* 0..2 */
+    float vibrance;             /* -1..1 */
+    float temperature;          /* -1 cool .. 1 warm */
+    float tint;                 /* -1 green .. 1 magenta */
+    float gamma;                /* 0.5..2 */
+    uint32_t fxaa;              /* edge anti-aliasing (game capture) */
+    uint32_t hdr_tonemap;       /* 1 = always tone map HDR10/HLG to SDR, even on an HDR display */
 } bv_enhance_settings;
+
+typedef enum bv_nr_variant { BV_NR_AUTO = 0, BV_NR_COMPAT = 1, BV_NR_ORIGINAL = 2 } bv_nr_variant;
+typedef enum bv_nr_protect {
+    BV_NR_PROTECT_NONE = 0,
+    BV_NR_PROTECT_BOTTOM = 1,   /* subtitles band */
+    BV_NR_PROTECT_TOP = 2,
+    BV_NR_PROTECT_TOP_BOTTOM = 3,
+    BV_NR_PROTECT_CENTER = 4    /* crosshair / HUD centre */
+} bv_nr_protect;
 
 typedef enum bv_enhance_flags {
     BV_ENHANCE_VSR_ACTIVE = 1u << 0,
@@ -388,7 +490,11 @@ typedef enum bv_enhance_flags {
     BV_ENHANCE_DISPLAY_SDR = 1u << 4,     /* TrueHDR requested but Windows HDR is off */
     BV_ENHANCE_VSR_BYPASSED = 1u << 5,    /* picture shown smaller than decoded: nothing to upscale */
     BV_ENHANCE_NEURAL_ACTIVE = 1u << 6,
-    BV_ENHANCE_NEURAL_UNAVAILABLE = 1u << 7
+    BV_ENHANCE_NEURAL_UNAVAILABLE = 1u << 7,
+    BV_ENHANCE_INTERPOLATION_ACTIVE = 1u << 8,
+    BV_ENHANCE_NIS_ACTIVE = 1u << 9,      /* NVIDIA Image Scaling ran instead of RTX VSR */
+    BV_ENHANCE_HDR_SOURCE = 1u << 10,     /* HDR10 (PQ) or HLG video */
+    BV_ENHANCE_HDR_PASSTHROUGH = 1u << 11 /* shown as HDR; otherwise tone mapped to SDR */
 } bv_enhance_flags;
 
 typedef struct bv_enhance_status {
@@ -399,12 +505,24 @@ typedef struct bv_enhance_status {
     float display_peak_nits;
     /* Smoothed GPU time per stage, measured with timestamp queries. */
     float gpu_convert_ms, gpu_vsr_ms, gpu_hdr_ms, gpu_total_ms;
-    float gpu_neural_ms;
+    float gpu_neural_ms;        /* DLSS NR evaluation */
     char neural_note[160];      /* UTF-8: why neural rendering is not running, when requested */
+    /* --- API 9 */
+    uint32_t nr_width, nr_height;  /* internal NR size */
+    float gpu_nr_prepare_ms;       /* downsample to the internal size */
+    float gpu_nr_composite_ms;     /* residual composite back to full size */
+    uint32_t nr_variant;           /* bv_nr_variant that ran */
+    char nr_label[96];             /* e.g. "Compatible SF 310.9.16.0 · modelo B" */
+    float gpu_present_ms;          /* final pass into the swapchain */
+    float gpu_interp_ms;           /* motion estimation + warp of a generated frame */
+    uint64_t interpolated_frames;  /* generated frames shown by this presenter */
 } bv_enhance_status;
 
 BV_API bv_result BV_CALL bv_player_set_enhance(bv_player* player, const bv_enhance_settings* settings);
 BV_API bv_result BV_CALL bv_player_enhance_status(bv_player* player, bv_enhance_status* out);
+/* Saves what is on screen (video area) as PNG. UTF-8 path. Blocks up to ~1 s. */
+BV_API bv_result BV_CALL bv_player_screenshot(bv_player* player, const char* png_path);
+BV_API bv_result BV_CALL bv_stream_screenshot(bv_stream* stream, const char* png_path);
 BV_API bv_result BV_CALL bv_stream_set_enhance(bv_stream* stream, const bv_enhance_settings* settings);
 BV_API bv_result BV_CALL bv_stream_enhance_status(bv_stream* stream, bv_enhance_status* out);
 /* 1 when any display is in HDR mode; peak_nits receives the highest reported peak (may be NULL). */
@@ -434,6 +552,9 @@ typedef struct bv_export_options {
     uint32_t width, height;     /* 0 = keep; one value keeps the aspect ratio */
     uint32_t quality;           /* 0..100 */
     uint32_t audio;             /* 1 = keep the audio track */
+    /* API 9: DLSS NR while exporting (both optional; NR runs when enhance->neural is 1) */
+    bv_engine* engine;
+    const bv_enhance_settings* enhance;
 } bv_export_options;
 
 typedef struct bv_export_status {
@@ -448,6 +569,7 @@ typedef struct bv_export_status {
     uint32_t width, height;     /* output size */
     char encoder[32];
     char message[256];          /* UTF-8: error, or a note such as dropped audio */
+    char enhance[96];           /* API 9: e.g. "DLSS NR Compatible SF 310.9.16.0", empty when off */
 } bv_export_status;
 
 BV_API bv_result BV_CALL bv_export_start(const bv_export_options* options, bv_export** out_job);

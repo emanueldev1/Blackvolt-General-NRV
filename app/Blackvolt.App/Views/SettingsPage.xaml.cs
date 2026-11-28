@@ -25,11 +25,36 @@ public sealed partial class SettingsPage : Page
 
         VersionText.Text = $"Blackvolt {Updater.CurrentVersion}";
         AutoCheckSwitch.IsOn = AppSettings.Current.Update.AutoCheck;
+        foreach (var name in Mirrors.Names) MirrorBox.Items.Add(name);
+        MirrorBox.SelectedIndex = Math.Clamp(AppSettings.Current.Update.Mirror, 0, Mirrors.Names.Length - 1);
+        NrAutoSwitch.IsOn = AppSettings.Current.Video.Nr.AutoInstall;
+        ResumeSwitch.IsOn = AppSettings.Current.Capture.ResumeLastSource;
         if (Updater.Available is { } update) ShowUpdate(update);
     }
 
     private UpdateInfo? _update;
     private CancellationTokenSource? _download;
+
+    private void OnMirrorChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MirrorBox.SelectedIndex < 0 || AppSettings.Current.Update.Mirror == MirrorBox.SelectedIndex) return;
+        AppSettings.Current.Update.Mirror = MirrorBox.SelectedIndex;
+        AppSettings.Current.Save();
+    }
+
+    private void OnResumeToggled(object sender, RoutedEventArgs e)
+    {
+        if (AppSettings.Current.Capture.ResumeLastSource == ResumeSwitch.IsOn) return;
+        AppSettings.Current.Capture.ResumeLastSource = ResumeSwitch.IsOn;
+        AppSettings.Current.Save();
+    }
+
+    private void OnNrAutoToggled(object sender, RoutedEventArgs e)
+    {
+        if (AppSettings.Current.Video.Nr.AutoInstall == NrAutoSwitch.IsOn) return;
+        AppSettings.Current.Video.Nr.AutoInstall = NrAutoSwitch.IsOn;
+        AppSettings.Current.Save();
+    }
 
     private void OnAutoCheckToggled(object sender, RoutedEventArgs e)
     {

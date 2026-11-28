@@ -7,6 +7,11 @@ add_executable(blackvolt_engine_tests
   test_player.cpp
   test_remote_import.cpp
   test_enhance.cpp
+  test_interpolation.cpp
+  test_denoise.cpp
+  test_nis.cpp
+  test_timestretch.cpp
+  test_postfx.cpp
   test_capture.cpp
   test_export.cpp)
 if(BV_ENABLE_REMOTEPLAY)

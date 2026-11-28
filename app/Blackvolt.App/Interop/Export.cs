@@ -21,6 +21,8 @@ internal static partial class NativeExport
         public uint Height;
         public uint Quality;
         public uint Audio;
+        public nint Engine;   // API 9: DLSS NR while exporting
+        public nint Enhance;  // bv_enhance_settings*
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -38,9 +40,11 @@ internal static partial class NativeExport
         public uint Height;
         public fixed byte Encoder[32];
         public fixed byte Message[256];
+        public fixed byte Enhance[96];
 
         public readonly string EncoderText { get { fixed (byte* p = Encoder) return Utf8.Read(p, 32); } }
         public readonly string MessageText { get { fixed (byte* p = Message) return Utf8.Read(p, 256); } }
+        public readonly string EnhanceText { get { fixed (byte* p = Enhance) return Utf8.Read(p, 96); } }
     }
 
     [LibraryImport(Dll, EntryPoint = "bv_export_start")]
@@ -65,10 +69,14 @@ internal static partial class NativeExport
 
         private Job(nint handle) => _handle = handle;
 
-        public static Job Start(string input, string output, Codec codec, int width, int height, int quality, bool audio)
+        /// <param name="nr">DLSS NR settings to apply, or null. Needs <paramref name="engine"/>, which must
+        /// stay alive until the job ends.</param>
+        public static unsafe Job Start(string input, string output, Codec codec, int width, int height, int quality, bool audio,
+                                       EngineSession? engine = null, NativeEnhance.Settings? nr = null)
         {
             var inPtr = Marshal.StringToCoTaskMemUTF8(input);
             var outPtr = Marshal.StringToCoTaskMemUTF8(output);
+            var enhance = nr ?? default;
             try
             {
                 var o = new Options
@@ -81,6 +89,8 @@ internal static partial class NativeExport
                     Height = (uint)Math.Max(0, height),
                     Quality = (uint)Math.Clamp(quality, 0, 100),
                     Audio = audio ? 1u : 0u,
+                    Engine = nr is not null && engine is not null ? engine.Handle : 0,
+                    Enhance = nr is not null ? (nint)(&enhance) : 0, // copied by the engine before returning
                 };
                 NativeStart(o, out var handle).ThrowIfFailed();
                 return new Job(handle);

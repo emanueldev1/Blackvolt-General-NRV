@@ -27,6 +27,83 @@
 
       <InfoBar x:Name="Notice" IsOpen="False" />
 
+      <!-- DLSS NR: downloaded from Veyra's NVIDIA package, one build per GPU family -->
+      <Border Style="{StaticResource BvCardStyle}" Padding="22,18">
+        <StackPanel Spacing="14">
+          <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="DLSS NR" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <Border Style="{StaticResource BvChipStyle}" Margin="0" VerticalAlignment="Center">
+                  <TextBlock Text="Neural Rendering" FontSize="12" Foreground="{StaticResource BvVoltBrush}" />
+                </Border>
+              </StackPanel>
+              <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                         Text="Se descargan de RankFTW/rhi-repo en GitHub, el mismo origen que usa Veyra (archivos idénticos), y se verifican por CRC y SHA-256 antes de instalarse. El compatible funciona en RTX 20, 30, 40 y 50; el original de NVIDIA solo en RTX 50." />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Top">
+              <Button x:Name="NrDownloadAll" Click="OnNrDownloadAll" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon Glyph="&#xE896;" FontSize="14" />
+                  <TextBlock Text="Descargar e instalar" />
+                </StackPanel>
+              </Button>
+              <ComboBox x:Name="NrMirror" Header="Servidor" MinWidth="190" SelectionChanged="OnNrMirrorChanged" />
+            </StackPanel>
+          </Grid>
+          <StackPanel x:Name="NrProgressPanel" Spacing="6" Visibility="Collapsed">
+            <Grid ColumnSpacing="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="NrProgressText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" />
+              <HyperlinkButton x:Name="NrCancel" Grid.Column="1" Content="Cancelar" Padding="0" Click="OnNrCancel" />
+            </Grid>
+            <ProgressBar x:Name="NrProgress" Maximum="1" />
+          </StackPanel>
+          <ItemsControl x:Name="NrList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="local:NrRow">
+                <Grid ColumnSpacing="16" Padding="0,10" BorderThickness="0,1,0,0"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Ellipse Width="10" Height="10" Fill="{x:Bind StateBrush}" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{x:Bind Detail}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Text="{x:Bind StateText}" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <ComboBox ItemsSource="{x:Bind BuildLabels}" SelectedIndex="{x:Bind BuildIndex}" Tag="{x:Bind Variant}"
+                              SelectionChanged="OnNrBuildChanged" MinWidth="250" MaxWidth="320"
+                              ToolTipService.ToolTip="Versión a descargar (release de rhi-repo)" />
+                    <Button Content="{x:Bind DownloadText}" Tag="{x:Bind Variant}" Click="OnNrDownload" />
+                    <Button Content="Importar…" Tag="{x:Bind Variant}" Click="OnNrImport" />
+                    <Button Tag="{x:Bind Variant}" Click="OnNrRemove" IsEnabled="{x:Bind Installed}"
+                            ToolTipService.ToolTip="Eliminar">
+                      <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="Otros runtimes NVIDIA" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,6,0,0" />
+
       <ItemsControl x:Name="RuntimeList">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="local:RuntimeRow">

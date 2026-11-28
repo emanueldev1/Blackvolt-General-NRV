@@ -1,5 +1,6 @@
 #pragma once
 
+#include "enhance/NeuralRendering.h"
 #include "gpu/D3D12Context.h"
 #include "ngx/NgxRuntime.h"
 #include "runtime/Catalog.h"
@@ -22,6 +23,10 @@ public:
     [[nodiscard]] ngx::NgxRuntime* ngx() { return ngx_.get(); }
 
     bv_runtime_status runtimeStatus(bv_feature feature);
+    // Where each DLSS NR build lives, for the presenters (the catalog outlives them).
+    [[nodiscard]] enhance::NrLocator nrLocator() {
+        return [this](ngx::NrVariant v) { return catalog_.nrFolder(v); };
+    }
 
 private:
     std::unique_ptr<gpu::D3D12Context> gpu_;

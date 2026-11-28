@@ -6,6 +6,7 @@ namespace bv::media {
 namespace {
 
 constexpr std::string_view kScheme = "capture:";
+constexpr std::string_view kScreen = "screen:";
 
 bool parseSize(std::string_view v, int& w, int& h) {
     const auto x = v.find('x');
@@ -17,13 +18,85 @@ bool parseSize(std::string_view v, int& w, int& h) {
 
 } // namespace
 
-bool isCaptureUrl(std::string_view url) { return url.substr(0, kScheme.size()) == kScheme; }
+bool isCaptureUrl(std::string_view url) {
+    return url.substr(0, kScheme.size()) == kScheme || url.substr(0, kScreen.size()) == kScreen;
+}
+
+namespace {
+std::optional<CaptureUrl> parseScreenUrl(std::string_view url, std::string* error) {
+    auto fail = [&](const char* msg) -> std::optional<CaptureUrl> {
+        if (error) *error = msg;
+        return std::nullopt;
+    };
+#if !defined(_WIN32)
+    (void)url;
+    return fail("la captura de pantalla solo está disponible en Windows");
+#else
+    url.remove_prefix(kScreen.size());
+    std::string_view query;
+    if (const auto q = url.rfind('?'); q != std::string_view::npos && url.substr(0, 6) != "title=") {
+        query = url.substr(q + 1);
+        url = url.substr(0, q);
+    } else if (url.substr(0, 6) == "title=") {
+        // A window title may contain '?': the query starts at the last "?fps=" / "?cursor=".
+        for (const auto* key : {"?fps=", "?cursor="}) {
+            if (const auto pos = url.rfind(key); pos != std::string_view::npos) {
+                query = url.substr(pos + 1);
+                url = url.substr(0, pos);
+                break;
+            }
+        }
+    }
+    CaptureUrl out;
+    out.inputFormat = "gdigrab";
+    if (url == "desktop") out.target = "desktop";
+    else if (url.substr(0, 6) == "title=" && url.size() > 6) out.target = std::string(url);
+    else return fail("pantalla o ventana no válida");
+    std::string fps = "60";
+    std::string cursor = "1";
+    while (!query.empty()) {
+        const auto amp = query.find('&');
+        const auto pair = query.substr(0, amp);
+        query = amp == std::string_view::npos ? std::string_view{} : query.substr(amp + 1);
+        const auto eq = pair.find('=');
+        if (eq == std::string_view::npos) continue;
+        const auto key = pair.substr(0, eq), value = pair.substr(eq + 1);
+        if (key == "fps") {
+            int v = 0;
+            const auto r = std::from_chars(value.data(), value.data() + value.size(), v);
+            if (r.ec != std::errc{} || v <= 0 || v > 240) return fail("fps de captura inválidos");
+            fps = std::string(value);
+        } else if (key == "cursor") {
+            cursor = value == "0" ? "0" : "1";
+        } else if (key == "region") {
+            int v[4] = {};
+            auto s = value;
+            for (int i = 0; i < 4; ++i) {
+                const auto comma = s.find(',');
+                const auto part = s.substr(0, comma);
+                const auto r = std::from_chars(part.data(), part.data() + part.size(), v[i]);
+                if (r.ec != std::errc{}) return fail("región de captura inválida"); // offsets may be negative
+                s = comma == std::string_view::npos ? std::string_view{} : s.substr(comma + 1);
+            }
+            if (v[2] <= 0 || v[3] <= 0 || v[2] > 16384 || v[3] > 16384) return fail("región de captura inválida");
+            out.options.emplace_back("offset_x", std::to_string(v[0]));
+            out.options.emplace_back("offset_y", std::to_string(v[1]));
+            out.options.emplace_back("video_size", std::to_string(v[2] & ~1) + "x" + std::to_string(v[3] & ~1));
+        }
+    }
+    out.options.emplace_back("framerate", fps);
+    out.options.emplace_back("draw_mouse", cursor);
+    return out;
+#endif
+}
+} // namespace
 
 std::optional<CaptureUrl> parseCaptureUrl(std::string_view url, std::string* error) {
     auto fail = [&](const char* msg) -> std::optional<CaptureUrl> {
         if (error) *error = msg;
         return std::nullopt;
     };
+    if (url.substr(0, kScreen.size()) == kScreen) return parseScreenUrl(url, error);
     if (!isCaptureUrl(url)) return fail("no es una URL de captura");
     url.remove_prefix(kScheme.size());
 

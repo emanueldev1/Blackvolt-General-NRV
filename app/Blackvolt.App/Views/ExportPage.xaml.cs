@@ -35,6 +35,8 @@ public sealed partial class ExportPage : Page
         Select(ContainerBox, s.Container);
         QualitySlider.Value = s.Quality;
         AudioSwitch.IsOn = s.Audio;
+        NrSwitch.IsOn = s.Nr;
+        NrSwitch.IsEnabled = App.Engine is not null;
         CodecBox.SelectionChanged += (_, _) => UpdateEncoderHint();
         UpdateEncoderHint();
         if (e.Parameter is string path && File.Exists(path)) SetInput(path);
@@ -115,6 +117,7 @@ public sealed partial class ExportPage : Page
         settings.Height = height;
         settings.Quality = (int)QualitySlider.Value;
         settings.Audio = AudioSwitch.IsOn;
+        settings.Nr = NrSwitch.IsOn && NrSwitch.IsEnabled;
         settings.Container = container;
         AppSettings.Current.Save();
 
@@ -125,8 +128,19 @@ public sealed partial class ExportPage : Page
         try
         {
             _output = file.Path;
+            NativeEnhance.Settings? nr = null;
+            if (settings.Nr && App.Engine is not null)
+            {
+                var video = AppSettings.Current.Video;
+                var s = NativeEnhance.From(video);
+                // NR only on NVIDIA and when it is on in the player; denoise everywhere.
+                s.Neural = video.Nr.Enabled && App.Engine.Adapter.Vendor == NativeEngine.Vendor.Nvidia ? 1u : 0u;
+                var colorChanged = video.Brightness != 0 || video.Contrast != 1 || video.Saturation != 1 || video.Vibrance != 0 ||
+                                   video.Temperature != 0 || video.Tint != 0 || video.Gamma != 1 || video.Fxaa;
+                if (s.Neural != 0 || s.Denoise != 0 || colorChanged) nr = s;
+            }
             _job = NativeExport.Job.Start(_input, _output, (NativeExport.Codec)codec, 0, height,
-                                          settings.Quality, settings.Audio);
+                                          settings.Quality, settings.Audio, App.Engine, nr);
         }
         catch (Exception ex) when (ex is EngineException or DllNotFoundException or EntryPointNotFoundException)
         {
@@ -176,6 +190,7 @@ public sealed partial class ExportPage : Page
         if (s.Frames > 0)
             lines.Add($"{s.Frames} fotogramas · {s.Fps:0.0} fps · {Clock(s.ElapsedS)}" +
                       (s.State == ExportState.Running && s.EtaS > 0 ? $" · quedan {Clock(s.EtaS)}" : ""));
+        if (s.EnhanceText is { Length: > 0 } enhanceText) lines.Add(enhanceText);
         if (s.MessageText is { Length: > 0 } message) lines.Add(message);
         DetailText.Text = string.Join("\n", lines);
 

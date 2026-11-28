@@ -12,10 +12,18 @@
     <KeyboardAccelerator Key="Left" Invoked="OnSeekBack" />
     <KeyboardAccelerator Key="Right" Invoked="OnSeekForward" />
     <KeyboardAccelerator Key="I" Invoked="OnToggleStats" />
+    <KeyboardAccelerator Key="S" Invoked="OnScreenshotAccel" />
+    <KeyboardAccelerator Key="C" Invoked="OnCompareAccel" />
+    <KeyboardAccelerator Key="F11" Invoked="OnFullscreenAccel" />
+    <KeyboardAccelerator Key="V" Invoked="OnCycleSubtitles" />
+    <KeyboardAccelerator Key="F" Invoked="OnFullscreenAccel" />
+    <KeyboardAccelerator Key="Escape" Invoked="OnEscapeAccel" />
+    <KeyboardAccelerator Key="Up" Invoked="OnFaster" />
+    <KeyboardAccelerator Key="Down" Invoked="OnSlower" />
     <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenAccel" />
   </Page.KeyboardAccelerators>
 
-  <Grid Background="Black" PointerMoved="OnPointerMoved">
+  <Grid Background="Black" PointerMoved="OnPointerMoved" DoubleTapped="OnDoubleTapped">
     <SwapChainPanel x:Name="Video" SizeChanged="OnVideoSizeChanged"
                     CompositionScaleChanged="OnCompositionScaleChanged" />
 
@@ -33,13 +41,20 @@
     </StackPanel>
 
     <!-- Stats overlay -->
+    <!-- Performance overlay (Controls/PerfOverlay, created in code) -->
     <Border x:Name="StatsPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
-            Margin="16" Padding="14,10" CornerRadius="6" Background="#B3000000">
-      <TextBlock x:Name="StatsText" FontFamily="Cascadia Mono, Consolas" FontSize="12"
-                 Foreground="#E6FFFFFF" LineHeight="18" />
+            Margin="16" IsHitTestVisible="False" />
+
+    <!-- Subtitles -->
+    <Border x:Name="SubtitleBox" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="40,40,40,48"
+            Padding="14,6" CornerRadius="6" Visibility="Collapsed" IsHitTestVisible="False" MaxWidth="1400">
+      <TextBlock x:Name="SubtitleText" Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                 FontWeight="SemiBold" />
     </Border>
 
     <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" VerticalAlignment="Top" Margin="16" MaxWidth="640" />
+    <InfoBar x:Name="ShotBar" Severity="Success" IsOpen="False" VerticalAlignment="Bottom" HorizontalAlignment="Right"
+             Margin="16,16,16,96" MaxWidth="520" />
 
     <!-- Transport -->
     <Grid x:Name="Transport" VerticalAlignment="Bottom" Padding="20,40,20,14" Visibility="Collapsed">
@@ -82,12 +97,28 @@
                   ToolTipService.ToolTip="Mejora de video (RTX)">
             <FontIcon Glyph="&#xE790;" Foreground="White" FontSize="14" />
           </Button>
+          <Button x:Name="CaptionsButton" Background="Transparent" BorderThickness="0"
+                  ToolTipService.ToolTip="Subtítulos y audio (V)">
+            <FontIcon Glyph="&#xED1E;" Foreground="White" FontSize="14" />
+          </Button>
+          <Button x:Name="SpeedButton" Background="Transparent" BorderThickness="0" MinWidth="44"
+                  ToolTipService.ToolTip="Velocidad (↑ / ↓)">
+            <TextBlock x:Name="SpeedText" Text="1×" Foreground="White" FontSize="13" FontFamily="Cascadia Mono, Consolas" />
+          </Button>
+          <Button Click="OnScreenshot" Background="Transparent" BorderThickness="0"
+                  ToolTipService.ToolTip="Captura de pantalla (S)">
+            <FontIcon Glyph="&#xE722;" Foreground="White" FontSize="14" />
+          </Button>
           <Button Click="OnToggleStatsClick" Background="Transparent" BorderThickness="0"
                   ToolTipService.ToolTip="Estadísticas (I)">
             <FontIcon Glyph="&#xE9D9;" Foreground="White" FontSize="14" />
           </Button>
           <Button Click="OnOpen" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Abrir (Ctrl+O)">
             <FontIcon Glyph="&#xE8E5;" Foreground="White" FontSize="14" />
+          </Button>
+          <Button Click="OnFullscreenClick" Background="Transparent" BorderThickness="0"
+                  ToolTipService.ToolTip="Pantalla completa (F11, doble clic)">
+            <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" Foreground="White" FontSize="14" />
           </Button>
         </StackPanel>
       </Grid>

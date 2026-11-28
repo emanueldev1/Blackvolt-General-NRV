@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -15,6 +16,18 @@
 namespace bv::exporter {
 
 enum class Codec { H264 = 0, Hevc = 1, Av1 = 2 };
+
+// Per-frame processing between decode and encode (DLSS NR on the GPU). Frames are RGBA8 at the
+// source size, sRGB-encoded, in display order.
+class FrameFilter {
+public:
+    virtual ~FrameFilter() = default;
+    virtual bool process(const uint8_t* rgba, int stride, uint8_t* out, int outStride) = 0;
+    [[nodiscard]] virtual std::string describe() const { return {}; }
+};
+// Creates the filter once the source size and frame interval are known; null + error on failure.
+using FilterFactory = std::function<std::unique_ptr<FrameFilter>(uint32_t width, uint32_t height, double frameMs,
+                                                                  std::string* error)>;
 
 struct Options {
     std::string input;
@@ -25,6 +38,7 @@ struct Options {
     uint32_t quality = 70;       // 0..100, higher = better
     bool audio = true;
     std::vector<std::string> encoders; // empty = default list for the codec
+    FilterFactory filter;              // optional (DLSS NR)
 };
 
 enum class State { Idle = 0, Running = 1, Done = 2, Failed = 3, Cancelled = 4 };
@@ -39,6 +53,7 @@ struct Progress {
     bool hardware = false;
     uint32_t outWidth = 0, outHeight = 0;
     std::string encoder;
+    std::string enhance;         // e.g. "DLSS NR Compatible SF 310.9.16.0"
     std::string message;         // error, or a note (e.g. audio dropped)
 };
 

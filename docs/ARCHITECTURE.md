@@ -38,7 +38,7 @@ Blackvolt usa los runtimes NGX de NVIDIA, cargados en tiempo de ejecución desde
 
 | DLL | Función | Origen |
 |---|---|---|
-| `nvngx_dlssnr.dll` | DLSS NR (Neural Rendering): etapa preparada (`enhance/NeuralRendering.h`), sin runtime hasta que NVIDIA lo publique | — |
+| `nvngx_dlssnr.dll` | DLSS NR (Neural Rendering), `enhance/NeuralRendering` + `ngx/DlssNrSession` | Paquete NVIDIA de Veyra (descarga automática) |
 | `nvngx_dlssg.dll` | DLSS Frame Generation | DLSS SDK (oficial) |
 | `nvngx_vsr.dll` | RTX Video Super Resolution | RTX Video SDK (oficial) |
 | `nvngx_truehdr.dll` | RTX Video TrueHDR | RTX Video SDK (oficial) |
@@ -50,7 +50,11 @@ Blackvolt usa los runtimes NGX de NVIDIA, cargados en tiempo de ejecución desde
   y SHA-256 de cada una; el script de empaquetado y la app verifican esos hashes.
 - **RTX 20/30:** las builds de la comunidad (DLL de NVIDIA modificadas) no se redistribuyen.
   La app ofrece descargarlas desde su origen, verificando el hash, a petición del usuario.
-- **No se usan** parches en memoria que alteran la arquitectura reportada por la GPU.
+- **DLSS NR** se carga como Veyra: `nvngx_dlssnr.dll` directamente (exporta su propio Init_Ext/
+  CreateFeature/Evaluate), con el App ID del snippet firmado y un shim en *su* entrada de importación
+  de `GetModuleFileNameW` (responde `nvngx.dll` solo para el módulo de Blackvolt). En RTX 30, con builds
+  que lo necesitan, la consulta de arquitectura de NVAPI se responde como Blackwell solo para la GPU
+  elegida y solo desde el módulo NR. Ver [DLSS_NR.md](DLSS_NR.md).
 
 ## Otras dependencias (no se suben al repo)
 

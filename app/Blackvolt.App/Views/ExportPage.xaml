@@ -67,7 +67,10 @@
             <ComboBoxItem Content="MOV" Tag=".mov" />
           </ComboBox>
 
-          <ToggleSwitch x:Name="AudioSwitch" Grid.Row="3" Header="Conservar el audio" OnContent="Sí, sin recodificar" OffContent="No" />
+          <StackPanel Grid.Row="3" Spacing="6">
+            <ToggleSwitch x:Name="AudioSwitch" Header="Conservar el audio" OnContent="Sí, sin recodificar" OffContent="No" />
+            <ToggleSwitch x:Name="NrSwitch" Header="Aplicar las mejoras del reproductor" OnContent="Sí: DLSS NR, reducción de ruido y color" OffContent="No" />
+          </StackPanel>
           <TextBlock x:Name="EncoderHint" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 

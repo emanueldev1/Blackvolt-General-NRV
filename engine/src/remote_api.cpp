@@ -318,8 +318,8 @@ bv_result BV_CALL bv_stream_create(bv_engine* engine, bv_stream** out) {
 #if defined(_WIN32)
     return guarded([&] {
         auto s = std::make_unique<bv_stream>();
-        s->presenter = bv::render::D3D12Presenter::create(engine->engine.gpu(), engine->engine.ngx(),
-                                                               &engine->engine.telemetry());
+        s->presenter = bv::render::D3D12Presenter::create(
+            engine->engine.gpu(), engine->engine.ngx(), &engine->engine.telemetry(), engine->engine.nrLocator());
         if (!s->presenter) return BV_ERR_INTERNAL;
         s->session = std::make_unique<StreamSession>(engine->engine.gpu().device(), *s->presenter,
                                                      [] { return bv::audio::createWasapiSink(); }, createSdlGamepad(),
@@ -461,6 +461,19 @@ bv_result BV_CALL bv_stream_set_enhance(bv_stream* stream, const bv_enhance_sett
 #if defined(_WIN32)
     stream->presenter->setEnhance(bv::render::fromApi(*settings));
     return BV_OK;
+#else
+    return BV_ERR_UNSUPPORTED;
+#endif
+}
+
+bv_result BV_CALL bv_stream_screenshot(bv_stream* stream, const char* png_path) {
+    if (!stream || !png_path) return BV_ERR_INVALID_ARGUMENT;
+#if defined(_WIN32)
+    try {
+        return stream->presenter->screenshot(png_path) ? BV_OK : BV_ERR_INTERNAL;
+    } catch (...) {
+        return BV_ERR_INTERNAL;
+    }
 #else
     return BV_ERR_UNSUPPORTED;
 #endif

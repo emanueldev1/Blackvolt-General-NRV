@@ -14,6 +14,12 @@
 #include <cstdint>
 #include <exception>
 #include <new>
+#include <vector>
+
+#if defined(_WIN32)
+#include <dxgi1_4.h>
+#include <wrl/client.h>
+#endif
 
 
 
@@ -138,6 +144,7 @@ bv_result BV_CALL bv_runtime_scan(const char* folder, bv_runtime_candidate* out,
             c.size = sizeof(c);
             c.feature = found[i].feature;
             c.origin = found[i].id.origin;
+            c.nr_variant = static_cast<uint32_t>(found[i].nrVariant);
             const auto label = found[i].id.label;
             const auto path = bv::runtime::toUtf8(found[i].path);
             std::memcpy(c.label, label.data(), std::min(label.size(), sizeof(c.label) - 1));
@@ -151,6 +158,98 @@ bv_result BV_CALL bv_engine_runtime_status(bv_engine* engine, bv_feature feature
     if (!engine || !out || feature < 0 || feature >= BV_FEATURE_COUNT) return BV_ERR_INVALID_ARGUMENT;
     return guarded([&] {
         *out = engine->engine.runtimeStatus(feature);
+        return BV_OK;
+    });
+}
+
+namespace {
+#define BV_COPY(dst, src) copyText(dst, sizeof(dst), src)
+void copyText(char* dst, std::size_t size, const std::string& src) {
+    const auto n = std::min(src.size(), size - 1);
+    std::memcpy(dst, src.data(), n);
+    dst[n] = '\0';
+}
+
+void fillNrInfo(bv::runtime::Catalog& catalog, uint32_t variant, bv_nr_runtime_info& out) {
+    out = bv_nr_runtime_info{};
+    out.size = sizeof(out);
+    out.variant = variant;
+    const auto located = catalog.locateNr(static_cast<bv::ngx::NrVariant>(variant));
+    if (!located) return;
+    out.installed = 1;
+    out.origin = located->id.origin;
+    std::error_code ec;
+    out.bytes = std::filesystem::file_size(located->path, ec);
+    BV_COPY(out.version, bv::runtime::Catalog::fileVersion(located->path));
+    BV_COPY(out.label, located->id.label);
+    if (located->id.known) BV_COPY(out.sha256, located->id.known->sha256);
+    BV_COPY(out.path, bv::runtime::toUtf8(located->path));
+}
+} // namespace
+
+bv_result BV_CALL bv_nr_runtime_get(uint32_t variant, bv_nr_runtime_info* out) {
+    if (!out || variant < BV_NR_COMPAT || variant > BV_NR_ORIGINAL) return BV_ERR_INVALID_ARGUMENT;
+    return guarded([&] {
+        bv::runtime::Catalog catalog(bv::runtime::globalPaths());
+        fillNrInfo(catalog, variant, *out);
+        return BV_OK;
+    });
+}
+
+bv_result BV_CALL bv_nr_runtime_import(const char* source_path, uint32_t variant, bv_nr_runtime_info* out) {
+    if (!source_path || variant < BV_NR_COMPAT || variant > BV_NR_ORIGINAL) return BV_ERR_INVALID_ARGUMENT;
+    return guarded([&] {
+        bv::runtime::Catalog catalog(bv::runtime::globalPaths());
+        using E = bv::runtime::Catalog::ImportError;
+        switch (catalog.importNr(bv::runtime::fromUtf8(source_path), static_cast<bv::ngx::NrVariant>(variant), nullptr)) {
+        case E::None: break;
+        case E::NoUserDir: return BV_ERR_NOT_INITIALIZED;
+        case E::CopyFailed: return BV_ERR_INTERNAL;
+        default: return BV_ERR_INVALID_ARGUMENT;
+        }
+        if (out) fillNrInfo(catalog, variant, *out);
+        return BV_OK;
+    });
+}
+
+bv_result BV_CALL bv_nr_runtime_remove(uint32_t variant) {
+    if (variant < BV_NR_COMPAT || variant > BV_NR_ORIGINAL) return BV_ERR_INVALID_ARGUMENT;
+    return guarded([&] {
+        bv::runtime::Catalog catalog(bv::runtime::globalPaths());
+        return catalog.removeNr(static_cast<bv::ngx::NrVariant>(variant)) ? BV_OK : BV_ERR_INTERNAL;
+    });
+}
+
+bv_result BV_CALL bv_engine_stage_history(bv_engine* engine, const char* stage, float* out, uint32_t capacity,
+                                          uint32_t* count) {
+    if (!engine || !stage || !count) return BV_ERR_INVALID_ARGUMENT;
+    return guarded([&] {
+        *count = 0;
+        if (const auto* stats = engine->engine.telemetry().find(stage)) {
+            *count = static_cast<uint32_t>(stats->recent(out, capacity));
+        }
+        return BV_OK;
+    });
+}
+
+bv_result BV_CALL bv_engine_gpu_memory(bv_engine* engine, bv_gpu_memory* out) {
+    if (!engine || !out) return BV_ERR_INVALID_ARGUMENT;
+    return guarded([&] {
+        bv_gpu_memory m{};
+        m.size = sizeof(m);
+        m.dedicated_bytes = engine->engine.gpu().adapter().dedicated_vram_bytes;
+#if defined(_WIN32)
+        Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+        if (auto* adapter = engine->engine.gpu().dxgiAdapter();
+            adapter && SUCCEEDED(adapter->QueryInterface(IID_PPV_ARGS(&adapter3)))) {
+            DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+                m.usage_bytes = info.CurrentUsage;
+                m.budget_bytes = info.Budget;
+            }
+        }
+#endif
+        *out = m;
         return BV_OK;
     });
 }

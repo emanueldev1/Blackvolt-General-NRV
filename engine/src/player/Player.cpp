@@ -1,10 +1,13 @@
 #include "Player.h"
 
+#include "audio/TimeStretch.h"
+
 #include "core/Log.h"
 #include "media/AudioDecoder.h"
 #include "media/Demuxer.h"
 #include "media/VideoDecoder.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -71,16 +74,28 @@ void Player::open(const std::string& urlUtf8) {
     needClockReset_ = true;
     presented_ = 0;
     dropped_ = 0;
+    generated_ = 0;
     clock_.reset(0.0);
     clock_.setPaused(false);
     live_ = false;
     running_ = true;
 
     auto media = std::make_shared<OpenedMedia>();
+    if (urlUtf8 != url_) { // a new source: back to its default tracks
+        url_ = urlUtf8;
+        preferredAudio_ = -1;
+        subtitleStream_ = -1;
+    }
+    {
+        std::lock_guard lock(cueMutex_);
+        cues_.clear();
+    }
+    subtitleChanged_ = true;
+    const int preferredAudio = preferredAudio_;
 
-    demuxThread_ = std::thread([this, media, url = urlUtf8] {
+    demuxThread_ = std::thread([this, media, url = urlUtf8, preferredAudio] {
         std::string error;
-        auto demuxer = media::Demuxer::open(url, &error);
+        auto demuxer = media::Demuxer::open(url, &error, preferredAudio);
         std::optional<media::VideoDecoder> video;
         std::optional<media::AudioDecoder> audio;
         if (demuxer) video = media::VideoDecoder::open(demuxer->video(), device_, static_cast<int>(4 + 2), &error);
@@ -122,6 +137,8 @@ void Player::open(const std::string& urlUtf8) {
             info_.codec = media->video->codecName();
             info_.hasAudio = media->audio.has_value();
             info_.live = d.live();
+            info_.tracks = d.tracks();
+            info_.audioTrack = d.audio().index;
             info_.state = PlayerState::Playing;
         }
         audioEnded_ = !media->audio.has_value();
@@ -179,9 +196,13 @@ void Player::open(const std::string& urlUtf8) {
         lock.unlock();
 
         auto& dec = *media->audio;
-        std::vector<float> samples;
+        std::vector<float> samples, stretched;
         uint64_t gen = generation_;
         const int channels = dec.outChannels();
+        // Speed changes keep the pitch: WSOLA time-stretch between decoder and sink. Input frame
+        // index -> media time is tracked so the sink still reports the right position.
+        audio::TimeStretch stretch(dec.outRate(), channels);
+        double stretchAnchorPts = kNaN, stretchAnchorFrame = 0, stretchPushed = 0;
 
         while (running_) {
             auto item = audioPackets_.pop();
@@ -189,6 +210,9 @@ void Player::open(const std::string& urlUtf8) {
             if (item->flush) {
                 dec.flush();
                 audio_->flush();
+                stretch.reset();
+                stretchAnchorPts = kNaN;
+                stretchPushed = 0;
                 gen = item->generation;
                 continue;
             }
@@ -207,7 +231,29 @@ void Player::open(const std::string& urlUtf8) {
                 }
                 const std::size_t frames = samples.size() / channels - offset;
                 for (float& s : samples) s *= volume_.load(std::memory_order_relaxed);
-                if (frames > 0 && !audio_->write(samples.data() + offset * channels, frames, pts)) return;
+                const double speed = rate_.load();
+                if (rateChanged_.exchange(false) || speed != stretch.rate()) {
+                    stretch.reset();
+                    stretch.setRate(speed);
+                    stretchAnchorPts = kNaN;
+                    stretchPushed = 0;
+                }
+                if (speed == 1.0 && std::isnan(stretchAnchorPts)) {
+                    if (frames > 0 && !audio_->write(samples.data() + offset * channels, frames, pts)) return;
+                } else if (frames > 0) {
+                    if (std::isnan(stretchAnchorPts) && !std::isnan(pts)) {
+                        stretchAnchorPts = pts;
+                        stretchAnchorFrame = stretchPushed;
+                    }
+                    stretched.clear();
+                    const double firstIn = stretch.process(samples.data() + offset * channels, frames, stretched);
+                    stretchPushed += static_cast<double>(frames);
+                    const double outPts = std::isnan(stretchAnchorPts)
+                                              ? pts
+                                              : stretchAnchorPts + (firstIn - stretchAnchorFrame) / dec.outRate();
+                    const std::size_t outFrames = stretched.size() / channels;
+                    if (outFrames > 0 && !audio_->write(stretched.data(), outFrames, outPts, speed)) return;
+                }
                 const double played = audio_->playedPosition();
                 if (!std::isnan(played) && !needClockReset_) clock_.syncTo(played);
                 samples.clear();
@@ -222,6 +268,9 @@ void Player::open(const std::string& urlUtf8) {
 void Player::demuxLoop(media::Demuxer& demuxer, bool hasAudio) {
     auto packet = media::makePacket();
     bool eof = false;
+    std::optional<media::SubtitleDecoder> subtitles;
+    int subtitlesStream = -1;
+    std::vector<media::SubtitleCue> fresh;
     while (running_) {
         const double target = seekTarget_.exchange(-1.0);
         if (target >= 0.0) {
@@ -254,12 +303,44 @@ void Player::demuxLoop(media::Demuxer& demuxer, bool hasAudio) {
             fail("error leyendo el archivo: " + media::errorString(err));
             return;
         }
-        PacketItem item{media::makePacket(), gen, false};
         const bool isVideo = packet->stream_index == demuxer.video().index;
+        const bool isAudio = hasAudio && packet->stream_index == demuxer.audio().index;
+        if (!isVideo && !isAudio) {
+            // Text subtitles: decoded right here (tiny), cues timed on the media clock.
+            if (subtitleChanged_.exchange(false)) {
+                subtitles.reset();
+                subtitlesStream = -1;
+            }
+            const int wanted = subtitleStream_;
+            if (wanted >= 0 && wanted != subtitlesStream) {
+                const auto info = demuxer.stream(wanted);
+                subtitles = media::SubtitleDecoder::open(info.params, info.timeBase);
+                subtitlesStream = wanted;
+            }
+            if (subtitles && packet->stream_index == subtitlesStream) {
+                fresh.clear();
+                subtitles->decode(packet.get(), fresh);
+                if (!fresh.empty()) {
+                    std::lock_guard lock(cueMutex_);
+                    for (auto& cue : fresh) {
+                        // A cue without an end lasts until the next one starts.
+                        for (auto& c : cues_)
+                            if (c.openEnded && c.start < cue.start && c.end > cue.start) c.end = cue.start;
+                        cues_.push_back(std::move(cue));
+                    }
+                    // The demuxer runs ahead of playback: keep what can still be shown.
+                    const double now = clock_.now();
+                    std::erase_if(cues_, [now](const media::SubtitleCue& c) { return c.end < now - 2.0; });
+                }
+            }
+            av_packet_unref(packet.get());
+            continue;
+        }
+        PacketItem item{media::makePacket(), gen, false};
         av_packet_move_ref(item.packet.get(), packet.get());
         if (isVideo) {
             if (!videoPackets_.push(std::move(item))) return;
-        } else if (hasAudio) {
+        } else {
             if (!audioPackets_.push(std::move(item))) return;
         }
     }
@@ -271,6 +352,11 @@ void Player::renderLoop() {
     std::optional<FrameItem> pending;
     auto lastPresent = std::chrono::steady_clock::time_point{};
     bool shownWhilePaused = false;
+    // Frame interpolation: generated frames go between the last shown frame and `pending`
+    // while waiting for it, so no latency is added. prevPts is the last real frame shown.
+    double prevPts = kNaN;
+    uint64_t prevGeneration = 0;
+    unsigned generatedForPending = 0;
 
     while (running_) {
         if (!pending) {
@@ -284,6 +370,7 @@ void Player::renderLoop() {
                 continue;
             }
             shownWhilePaused = false;
+            generatedForPending = 0;
         }
         if (pending->generation != generation_) {
             pending.reset();
@@ -334,6 +421,31 @@ void Player::renderLoop() {
         const double tolerance = presenter_.refreshInterval() * 0.5;
         switch (scheduleFrame(pending->pts, nextPts, clock_.now(), tolerance)) {
         case FrameAction::Wait: {
+            // Generated frames at prevPts + k * dt / n. n follows the request but never exceeds
+            // what the display can show (24 fps on 60 Hz -> x2, on 144 Hz up to x4).
+            const unsigned factor = presenter_.interpolationFactor();
+            const double dt = pending->pts - prevPts;
+            if (factor > 1 && !std::isnan(prevPts) && prevGeneration == pending->generation && dt > 0 && dt <= 0.1) {
+                const double refresh = std::max(presenter_.refreshInterval(), 1.0 / 500.0) * rate_.load();
+                const unsigned n = std::min<unsigned>(factor, std::max(1u, static_cast<unsigned>(dt / refresh + 0.25)));
+                while (generatedForPending + 1 < n) {
+                    const double at = prevPts + dt * (generatedForPending + 1) / n;
+                    const double now = clock_.now();
+                    if (now < at - tolerance) break;
+                    ++generatedForPending;
+                    if (now > at + dt / n) continue; // late: skip this one rather than stutter
+                    const auto t0 = std::chrono::steady_clock::now();
+                    if (!presenter_.presentInterpolated(*pending->frame,
+                                                        static_cast<float>(generatedForPending) / static_cast<float>(n)))
+                        break;
+                    const auto t1 = std::chrono::steady_clock::now();
+                    presentStats.record(std::chrono::duration<double, std::micro>(t1 - t0).count());
+                    if (lastPresent.time_since_epoch().count() != 0)
+                        frameStats.record(std::chrono::duration<double, std::micro>(t1 - lastPresent).count());
+                    lastPresent = t1;
+                    ++generated_;
+                }
+            }
             const double wait = pending->pts - clock_.now() - tolerance;
             std::this_thread::sleep_for(std::chrono::duration<double>(std::clamp(wait, 0.0005, 0.004)));
             break;
@@ -352,6 +464,8 @@ void Player::renderLoop() {
             }
             lastPresent = t1;
             ++presented_;
+            prevPts = pending->pts;
+            prevGeneration = pending->generation;
             {
                 std::lock_guard lock(infoMutex_);
                 info_.position = pending->pts;
@@ -361,6 +475,15 @@ void Player::renderLoop() {
         }
         }
     }
+}
+
+void Player::setRate(double rate) {
+    rate = std::clamp(rate, 0.25, 4.0);
+    if (live_) rate = 1.0;
+    if (rate == rate_.load()) return;
+    rate_ = rate;
+    rateChanged_ = true;
+    clock_.setRate(rate);
 }
 
 void Player::play() {
@@ -385,6 +508,11 @@ void Player::seek(double seconds) {
     ++generation_;
     dropBefore_ = seconds;
     needClockReset_ = true;
+    {
+        std::lock_guard lock(cueMutex_);
+        cues_.clear();
+    }
+    subtitleChanged_ = true; // the decoder restarts after the seek
     videoPackets_.clear();
     audioPackets_.clear();
     frames_.clear();
@@ -395,6 +523,42 @@ void Player::seek(double seconds) {
 }
 
 void Player::setVolume(float volume) { volume_ = std::clamp(volume, 0.0f, 2.0f); }
+
+void Player::selectAudioTrack(int streamIndex) {
+    if (live_ || url_.empty()) return;
+    const auto s = snapshot();
+    if (streamIndex == s.audioTrack) return;
+    const double position = s.position;
+    const bool paused = clock_.paused();
+    const std::string url = url_;
+    const int subtitle = subtitleStream_;
+    preferredAudio_ = streamIndex;
+    open(url); // same URL: keeps preferredAudio_
+    subtitleStream_ = subtitle;
+    if (position > 0.5) seek(position);
+    if (paused) pause();
+}
+
+void Player::selectSubtitleTrack(int streamIndex) {
+    subtitleStream_ = streamIndex;
+    subtitleChanged_ = true;
+    std::lock_guard lock(cueMutex_);
+    cues_.clear();
+    // Cues of the new track arrive as the demuxer reads on; already-read ones are not replayed.
+}
+
+std::string Player::subtitleNow() const {
+    const double t = clock_.now();
+    std::lock_guard lock(cueMutex_);
+    std::string out;
+    for (const auto& c : cues_) {
+        if (c.start <= t && t < c.end) {
+            if (!out.empty()) out += '\n';
+            out += c.text;
+        }
+    }
+    return out;
+}
 
 void Player::stopThreads() {
     running_ = false;
@@ -417,8 +581,10 @@ void Player::close() {
 PlayerSnapshot Player::snapshot() const {
     std::lock_guard lock(infoMutex_);
     PlayerSnapshot s = info_;
+    s.subtitleTrack = subtitleStream_;
     s.framesPresented = presented_;
     s.framesDropped = dropped_;
+    s.framesGenerated = generated_;
     return s;
 }
 

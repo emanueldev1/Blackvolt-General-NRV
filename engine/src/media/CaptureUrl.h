@@ -13,6 +13,11 @@ namespace bv::media {
 //     capture:video=<device name>[:audio=<device name>][?size=WxH&fps=N&format=mjpeg]
 //
 // which maps to FFmpeg's DirectShow input on Windows (v4l2 elsewhere, video only).
+//
+// Screen and window capture (Windows, FFmpeg gdigrab):
+//
+//     screen:desktop[?fps=N&region=X,Y,W,H&cursor=0|1]
+//     screen:title=<window title>[?fps=N&cursor=0|1]
 struct CaptureUrl {
     std::string inputFormat;                                   // "dshow" / "v4l2"
     std::string target;                                        // what avformat_open_input receives

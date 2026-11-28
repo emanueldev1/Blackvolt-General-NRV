@@ -47,6 +47,8 @@ public sealed partial class CapturePage : Page
         Select(Resolution, settings.Height);
         Select(FrameRate, settings.Fps);
 
+        LoadScreens();
+
         var any = video.Count > 0;
         EmptyCard.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
         SetupCard.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
@@ -75,6 +77,24 @@ public sealed partial class CapturePage : Page
         {
             ShowNotice("No se pudo preparar la captura", ex.Message, InfoBarSeverity.Error);
         }
+    }
+
+    private IReadOnlyList<ScreenSource> _screens = [];
+
+    private void LoadScreens()
+    {
+        _screens = ScreenEnumerator.List(WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow!));
+        ScreenSources.ItemsSource = _screens.Select(s => s.Label).ToList();
+        ScreenSources.SelectedIndex = _screens.Count > 0 ? 0 : -1;
+        if (ScreenFps.SelectedIndex < 0) ScreenFps.SelectedIndex = 1;
+    }
+
+    private void OnStartScreen(object sender, RoutedEventArgs e)
+    {
+        if (ScreenSources.SelectedIndex < 0 || ScreenSources.SelectedIndex >= _screens.Count) return;
+        var source = _screens[ScreenSources.SelectedIndex];
+        var url = source.Url(TagOf(ScreenFps) is var fps and > 0 ? fps : 60, ScreenCursor.IsOn);
+        Frame.Navigate(typeof(PlayerPage), new OpenMedia(url, source.Label));
     }
 
     private void ShowNotice(string title, string message, InfoBarSeverity severity)

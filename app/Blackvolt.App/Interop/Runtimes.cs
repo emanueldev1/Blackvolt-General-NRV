@@ -58,9 +58,10 @@ internal static class Runtimes
             NativeEngine.ScanRuntimes(folder, p, count, out count).ThrowIfFailed();
         }
         return buffer.Take((int)count)
-            .Select(c => new RuntimeCandidate(c.Feature, c.Origin, c.LabelText, c.PathText))
+            .Select(c => new RuntimeCandidate(c.Feature, c.Origin, c.LabelText, c.PathText, c.NrVariant))
             .ToList();
     }
 }
 
-internal sealed record RuntimeCandidate(Feature Feature, NativeEngine.RuntimeOrigin Origin, string Label, string Path);
+internal sealed record RuntimeCandidate(Feature Feature, NativeEngine.RuntimeOrigin Origin, string Label, string Path,
+                                        NativeEngine.NrVariant NrVariant);

@@ -186,6 +186,15 @@ void Job::run() {
 
     AVRational frameRate = av_guess_frame_rate(in.get(), inVideo, nullptr);
     if (frameRate.num <= 0 || frameRate.den <= 0) frameRate = {30, 1};
+    // Optional GPU filter (DLSS NR) at the source size, before scaling to the output size.
+    std::unique_ptr<FrameFilter> filter;
+    if (options_.filter) {
+        std::string why;
+        filter = options_.filter(static_cast<uint32_t>(dec->width), static_cast<uint32_t>(dec->height),
+                                 1000.0 / av_q2d(frameRate), &why);
+        if (!filter) return fail("DLSS NR: " + why);
+        update([&](Progress& p) { p.enhance = filter->describe(); });
+    }
     const auto* srcDesc = av_pix_fmt_desc_get(dec->pix_fmt);
     const bool tenBit = srcDesc && srcDesc->comp[0].depth > 8 && options_.codec != Codec::H264;
 
@@ -289,6 +298,20 @@ void Job::run() {
     if (av_frame_get_buffer(scaled.get(), 0) < 0) return fail("sin memoria para el fotograma");
     SwsContext* sws = nullptr;
     SwsPtr swsOwner;
+    // Filter path: decoded -> RGBA (source size) -> filter -> RGBA -> encoder format (output size).
+    auto rgbaIn = makeFrame();
+    auto rgbaOut = makeFrame();
+    SwsContext* toRgb = nullptr;
+    SwsContext* fromRgb = nullptr;
+    SwsPtr toRgbOwner, fromRgbOwner;
+    if (filter) {
+        for (auto* f : {rgbaIn.get(), rgbaOut.get()}) {
+            f->format = AV_PIX_FMT_RGBA;
+            f->width = dec->width;
+            f->height = dec->height;
+            if (av_frame_get_buffer(f, 0) < 0) return fail("sin memoria para el fotograma");
+        }
+    }
     int64_t lastPts = AV_NOPTS_VALUE;
     int64_t nextPts = 0;
     uint64_t frames = 0;
@@ -304,22 +327,54 @@ void Job::run() {
         }
     };
 
+    bool filterFailed = false;
     const auto encodeDecoded = [&]() {
         while (avcodec_receive_frame(dec.get(), decoded.get()) >= 0) {
             const int flags = (static_cast<uint32_t>(decoded->width) != outW || static_cast<uint32_t>(decoded->height) != outH)
                                   ? SWS_LANCZOS | SWS_ACCURATE_RND
                                   : SWS_BICUBIC | SWS_ACCURATE_RND;
-            sws = sws_getCachedContext(sws, decoded->width, decoded->height, static_cast<AVPixelFormat>(decoded->format),
-                                       enc->width, enc->height, enc->pix_fmt, flags, nullptr, nullptr, nullptr);
-            if (swsOwner.get() != sws) {
-                swsOwner.release();
-                swsOwner.reset(sws);
+            if (filter && decoded->width == rgbaIn->width && decoded->height == rgbaIn->height) {
+                // Same matrix and range on the way in and out, so the colours round-trip exactly.
+                int cs = decoded->colorspace;
+                if (cs != SWS_CS_ITU709 && cs != SWS_CS_ITU601 && cs != SWS_CS_SMPTE170M && cs != SWS_CS_SMPTE240M &&
+                    cs != SWS_CS_BT2020 && cs != SWS_CS_FCC)
+                    cs = decoded->height > 576 ? SWS_CS_ITU709 : SWS_CS_ITU601;
+                const int full = decoded->color_range == AVCOL_RANGE_JPEG ? 1 : 0;
+                toRgb = sws_getCachedContext(toRgb, decoded->width, decoded->height,
+                                             static_cast<AVPixelFormat>(decoded->format), decoded->width, decoded->height,
+                                             AV_PIX_FMT_RGBA, SWS_BICUBIC | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT,
+                                             nullptr, nullptr, nullptr);
+                fromRgb = sws_getCachedContext(fromRgb, decoded->width, decoded->height, AV_PIX_FMT_RGBA, enc->width,
+                                               enc->height, enc->pix_fmt, flags, nullptr, nullptr, nullptr);
+                if (toRgbOwner.get() != toRgb) { toRgbOwner.release(); toRgbOwner.reset(toRgb); }
+                if (fromRgbOwner.get() != fromRgb) { fromRgbOwner.release(); fromRgbOwner.reset(fromRgb); }
+                if (!toRgb || !fromRgb || av_frame_make_writable(scaled.get()) < 0) {
+                    av_frame_unref(decoded.get());
+                    continue;
+                }
+                const int* coeffs = sws_getCoefficients(cs);
+                sws_setColorspaceDetails(toRgb, coeffs, full, coeffs, 1, 0, 1 << 16, 1 << 16);
+                sws_setColorspaceDetails(fromRgb, coeffs, 1, coeffs, full, 0, 1 << 16, 1 << 16);
+                sws_scale(toRgb, decoded->data, decoded->linesize, 0, decoded->height, rgbaIn->data, rgbaIn->linesize);
+                if (!filter->process(rgbaIn->data[0], rgbaIn->linesize[0], rgbaOut->data[0], rgbaOut->linesize[0])) {
+                    filterFailed = true;
+                    av_frame_unref(decoded.get());
+                    return;
+                }
+                sws_scale(fromRgb, rgbaOut->data, rgbaOut->linesize, 0, decoded->height, scaled->data, scaled->linesize);
+            } else {
+                sws = sws_getCachedContext(sws, decoded->width, decoded->height, static_cast<AVPixelFormat>(decoded->format),
+                                           enc->width, enc->height, enc->pix_fmt, flags, nullptr, nullptr, nullptr);
+                if (swsOwner.get() != sws) {
+                    swsOwner.release();
+                    swsOwner.reset(sws);
+                }
+                if (!sws || av_frame_make_writable(scaled.get()) < 0) {
+                    av_frame_unref(decoded.get());
+                    continue;
+                }
+                sws_scale(sws, decoded->data, decoded->linesize, 0, decoded->height, scaled->data, scaled->linesize);
             }
-            if (!sws || av_frame_make_writable(scaled.get()) < 0) {
-                av_frame_unref(decoded.get());
-                continue;
-            }
-            sws_scale(sws, decoded->data, decoded->linesize, 0, decoded->height, scaled->data, scaled->linesize);
 
             int64_t pts = decoded->best_effort_timestamp;
             if (pts != AV_NOPTS_VALUE) pts = av_rescale_q(pts, inVideo->time_base, enc->time_base);
@@ -350,7 +405,7 @@ void Job::run() {
     };
 
     bv::log::info("export: escribiendo {}", options_.output);
-    while (!cancel_ && !writeFailed && av_read_frame(in.get(), packet.get()) >= 0) {
+    while (!cancel_ && !writeFailed && !filterFailed && av_read_frame(in.get(), packet.get()) >= 0) {
         if (packet->stream_index == vIndex) {
             if (avcodec_send_packet(dec.get(), packet.get()) >= 0) encodeDecoded();
         } else if (outAudio && packet->stream_index == aIndex) {
@@ -363,7 +418,7 @@ void Job::run() {
     }
 
     bv::log::info("export: fin de la entrada tras {} fotogramas", frames);
-    if (!cancel_ && !writeFailed) {
+    if (!cancel_ && !writeFailed && !filterFailed) {
         avcodec_send_packet(dec.get(), nullptr);
         encodeDecoded();
         drainEncoder(nullptr);
@@ -373,7 +428,7 @@ void Job::run() {
     out.reset(); // closes the file before a possible delete
 
     const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-    if (cancel_ || writeFailed) {
+    if (cancel_ || writeFailed || filterFailed) {
         std::error_code ec;
         std::filesystem::remove(pathFromUtf8(options_.output), ec);
         if (cancel_) {
@@ -383,7 +438,7 @@ void Job::run() {
             });
             return;
         }
-        return fail("error al escribir (¿disco lleno?)");
+        return fail(filterFailed ? "DLSS NR falló al procesar un fotograma" : "error al escribir (¿disco lleno?)");
     }
     update([&](Progress& p) {
         p.state = frames > 0 ? State::Done : State::Failed;

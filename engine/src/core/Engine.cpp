@@ -48,7 +48,13 @@ bv_runtime_status Engine::runtimeStatus(bv_feature feature) {
     bv_runtime_status status{};
     const auto located = catalog_.locate(feature);
     bv_runtime_state state = BV_RUNTIME_MISSING;
-    if (located) state = ngx_ ? ngx_->support(feature) : BV_RUNTIME_NGX_UNAVAILABLE;
+    if (located) {
+        if (!ngx_) state = BV_RUNTIME_NGX_UNAVAILABLE;
+        // NR is not driven through the NGX core (see ngx/DlssNrSession.h): the core cannot
+        // answer for it, creating the feature decides.
+        else if (feature == BV_FEATURE_DLSS_NR) state = ngx_->initialized() ? BV_RUNTIME_FOUND : BV_RUNTIME_NGX_UNAVAILABLE;
+        else state = ngx_->support(feature);
+    }
     fillStatus(status, feature, located ? &*located : nullptr, state);
     return status;
 }

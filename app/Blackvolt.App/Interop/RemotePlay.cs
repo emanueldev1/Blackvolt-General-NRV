@@ -319,6 +319,7 @@ internal sealed class RemoteStream : IDisposable
     public void PsButton() => NativeRemote.StreamPsButton(_handle);
     public void SleepConsole() => NativeRemote.StreamConsoleSleep(_handle);
     public void RequestKeyframe() => NativeRemote.StreamRequestKeyframe(_handle);
+    public NativeEngine.Result Screenshot(string path) => NativeEnhance.StreamScreenshot(_handle, path);
 
     public void SetEnhance(Services.VideoSettings settings) =>
         NativeEnhance.StreamSetEnhance(_handle, NativeEnhance.From(settings));

@@ -79,7 +79,7 @@ public:
     int sampleRate() const override { return rate_; }
     int channels() const override { return channels_; }
 
-    bool write(const float* samples, std::size_t frames, double pts) override {
+    bool write(const float* samples, std::size_t frames, double pts, double speed) override {
         std::size_t done = 0;
         while (done < frames) {
             if (stopped_) return false;
@@ -95,7 +95,8 @@ public:
                         std::memcpy(dst, samples + done * channels_, n * channels_ * sizeof(float));
                         render_->ReleaseBuffer(n, 0);
                         done += n;
-                        if (!std::isnan(pts)) endPts_ = pts + static_cast<double>(done) / rate_;
+                        if (!std::isnan(pts)) endPts_ = pts + static_cast<double>(done) * speed / rate_;
+                        speed_ = speed;
                     }
                     continue;
                 }
@@ -111,7 +112,7 @@ public:
         UINT32 padding = 0;
         if (FAILED(client_->GetCurrentPadding(&padding))) return kNaN;
         // Everything still queued in the device has not been heard yet.
-        return endPts_ - static_cast<double>(padding) / rate_ - latency_;
+        return endPts_ - (static_cast<double>(padding) / rate_ + latency_) * speed_;
     }
 
     void setPaused(bool paused) override {
@@ -142,6 +143,7 @@ private:
     int channels_ = 2;
     double latency_ = 0.0;
     double endPts_ = kNaN;
+    double speed_ = 1.0; // media seconds per played second
     bool paused_ = false;
     mutable std::mutex mutex_;
     std::atomic<bool> stopped_{false};

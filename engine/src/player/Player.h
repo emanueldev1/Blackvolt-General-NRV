@@ -3,6 +3,8 @@
 #include "BoundedQueue.h"
 #include "MediaClock.h"
 #include "Sinks.h"
+#include "media/Demuxer.h"
+#include "media/SubtitleDecoder.h"
 #include "core/TimerResolution.h"
 #include "media/Demuxer.h"
 #include "media/FFmpeg.h"
@@ -35,6 +37,9 @@ struct PlayerSnapshot {
     std::string error;
     uint64_t framesPresented = 0;
     uint64_t framesDropped = 0;
+    uint64_t framesGenerated = 0; // interpolated frames shown
+    std::vector<media::Track> tracks;
+    int audioTrack = -1, subtitleTrack = -1; // stream indices, -1 none
 };
 
 // Plays one media source: demux -> decode (GPU when possible) -> schedule -> present,
@@ -57,6 +62,14 @@ public:
     void seek(double seconds);
     void close();
     void setVolume(float volume);
+    // Audio: reopens at the current position with that stream. Subtitles: -1 = off.
+    void selectAudioTrack(int streamIndex);
+    void selectSubtitleTrack(int streamIndex);
+    // Subtitle text showing now (UTF-8, '\n' between lines), empty when none.
+    [[nodiscard]] std::string subtitleNow() const;
+    // Playback speed 0.25..4 (files only; live sources always run at 1). Pitch is kept.
+    void setRate(double rate);
+    [[nodiscard]] double rate() const { return rate_.load(); }
 
     [[nodiscard]] PlayerSnapshot snapshot() const;
 
@@ -100,8 +113,17 @@ private:
     std::atomic<bool> audioEnded_{true};
     std::atomic<bool> needClockReset_{true};
     std::atomic<bool> live_{false};
-    std::atomic<uint64_t> presented_{0}, dropped_{0};
+    std::atomic<uint64_t> presented_{0}, dropped_{0}, generated_{0};
     std::atomic<float> volume_{1.0f};
+    std::atomic<double> rate_{1.0};
+    // Subtitles: decoded on the demux thread into cues, read by the UI.
+    std::atomic<int> subtitleStream_{-1};
+    std::atomic<bool> subtitleChanged_{false};
+    mutable std::mutex cueMutex_;
+    std::vector<media::SubtitleCue> cues_;
+    std::string url_;
+    int preferredAudio_ = -1;
+    std::atomic<bool> rateChanged_{false};
 
     mutable std::mutex infoMutex_;
     PlayerSnapshot info_;

@@ -1,7 +1,8 @@
 name: release
 
-# Push a tag like v0.2.0 to publish a release. The in-app updater downloads the
-# Blackvolt-<version>-win-x64.zip asset and checks it against the .sha256 next to it.
+# Push a tag like v0.2.0 to publish a release: an installer (Blackvolt-<version>-setup-x64.exe,
+# Inno Setup) and a portable zip. The in-app updater downloads the Blackvolt-<version>-win-x64.zip
+# asset and checks it against the .sha256 next to it.
 on:
   push:
     tags: ['v*']
@@ -83,12 +84,31 @@ jobs:
         shell: pwsh
         run: |
           $name = "Blackvolt-${{ steps.version.outputs.value }}-win-x64.zip"
-          Copy-Item LICENSE, NOTICE.md publish/Blackvolt/
+          foreach ($f in 'LICENSE', 'NOTICE.md') { if (Test-Path $f) { Copy-Item $f publish/Blackvolt/ } }
           if (-not (Test-Path publish/Blackvolt/Blackvolt.exe)) { throw "Falta Blackvolt.exe en el paquete" }
           Compress-Archive -Path publish/Blackvolt -DestinationPath $name -CompressionLevel Optimal
           $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $name" | Out-File "$name.sha256" -Encoding ascii -NoNewline
           "zip=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Installer
+        id: installer
+        shell: pwsh
+        run: |
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+                  Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress | Out-Null
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc /Q "/DAppVersion=${{ steps.version.outputs.value }}" "/DSourceDir=${{ github.workspace }}\publish\Blackvolt" `
+                 "/DOutputDir=${{ github.workspace }}" installer/Blackvolt.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falló ($LASTEXITCODE)" }
+          $setup = "Blackvolt-${{ steps.version.outputs.value }}-setup-x64.exe"
+          if (-not (Test-Path $setup)) { throw "No se generó $setup" }
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $setup" | Out-File "$setup.sha256" -Encoding ascii -NoNewline
+          "setup=$setup" >> $env:GITHUB_OUTPUT
 
       - name: Publish release
         env:
@@ -97,10 +117,11 @@ jobs:
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
           $zip = "${{ steps.package.outputs.zip }}"
+          $setup = "${{ steps.installer.outputs.setup }}"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $zip "$zip.sha256" --clobber
+            gh release upload $tag $setup "$setup.sha256" $zip "$zip.sha256" --clobber
           } else {
-            gh release create $tag $zip "$zip.sha256" --target "${{ github.sha }}" `
+            gh release create $tag $setup "$setup.sha256" $zip "$zip.sha256" --target "${{ github.sha }}" `
               --title "Blackvolt ${{ steps.version.outputs.value }}" --generate-notes
           }

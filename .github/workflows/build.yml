@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'work/**']
   pull_request:
 
 jobs:
@@ -71,3 +71,11 @@ jobs:
         if: failure()
         shell: pwsh
         run: Get-ChildItem app -Recurse -Filter output.json | ForEach-Object { Get-Content $_.FullName }
+
+      - name: Upload app build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blackvolt-debug-x64
+          path: app/Blackvolt.App/bin/x64/Debug/
+          retention-days: 7

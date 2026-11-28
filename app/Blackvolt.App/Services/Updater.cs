@@ -59,7 +59,7 @@ internal static class Updater
     /// <summary>Returns the latest release when it is newer than this build, otherwise null.</summary>
     public static async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
     {
-        using var response = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct);
+        using var response = await Http.GetAsync(Mirrors.Api($"https://api.github.com/repos/{Repo}/releases/latest", AppSettings.Current.Update.Mirror), ct);
         AppSettings.Current.Update.LastCheckUtc = DateTime.UtcNow;
         AppSettings.Current.Save();
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null; // no releases yet
@@ -121,7 +121,8 @@ internal static class Updater
         var zipPath = Path.Combine(workDir, "Blackvolt.zip");
 
         // 1. Download with progress.
-        using (var response = await Http.GetAsync(info.ZipUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+        var mirror = AppSettings.Current.Update.Mirror;
+        using (var response = await Http.GetAsync(Mirrors.Asset(info.ZipUrl, mirror), HttpCompletionOption.ResponseHeadersRead, ct))
         {
             response.EnsureSuccessStatusCode();
             var total = response.Content.Headers.ContentLength ?? info.ZipSize;
@@ -141,7 +142,7 @@ internal static class Updater
         // 2. Integrity: the release publishes the zip's SHA-256 next to it.
         if (info.ShaUrl is not null)
         {
-            var expected = (await Http.GetStringAsync(info.ShaUrl, ct)).Trim().Split(' ', '\t')[0];
+            var expected = (await Http.GetStringAsync(Mirrors.Asset(info.ShaUrl, mirror), ct)).Trim().Split(' ', '\t')[0];
             string actual;
             await using (var stream = File.OpenRead(zipPath))
                 actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct));

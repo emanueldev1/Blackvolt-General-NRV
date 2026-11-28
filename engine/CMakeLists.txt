@@ -37,7 +37,9 @@ set(BV_ENGINE_SOURCES
   src/player_api.cpp
   src/export_api.cpp
   src/export/Exporter.cpp
+  src/export/GpuEnhancer.cpp
   src/audio/WasapiSink.cpp
+  src/audio/TimeStretch.cpp
   src/render/D3D12Presenter.cpp
   src/core/Engine.cpp
   src/core/Log.cpp
@@ -46,12 +48,18 @@ set(BV_ENGINE_SOURCES
   src/media/CaptureDevices.cpp
   src/media/CaptureUrl.cpp
   src/media/Demuxer.cpp
+  src/media/SubtitleDecoder.cpp
   src/media/VideoDecoder.cpp
   src/player/Player.cpp
   src/ngx/NgxRuntime.cpp
   src/ngx/VideoSuperResolution.cpp
   src/ngx/TrueHdr.cpp
+  src/ngx/DlssNrSession.cpp
   src/enhance/NeuralRendering.cpp
+  src/enhance/FrameInterpolation.cpp
+  src/enhance/Denoise.cpp
+  src/enhance/NisScaler.cpp
+  src/enhance/PostFx.cpp
   src/runtime/Catalog.cpp
   src/runtime/Manifest.cpp
   src/runtime/Sha256.cpp
@@ -69,6 +77,21 @@ set(BV_ENGINE_SOURCES
 
 # Platform-independent core, linked by the DLL and by the unit tests.
 add_library(blackvolt_core STATIC ${BV_ENGINE_SOURCES})
+
+# NVIDIA Image Scaling shader (MIT, third_party/nis) embedded as bytes for runtime compilation.
+set(BV_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(BV_NIS_SOURCE "${PROJECT_SOURCE_DIR}/third_party/nis/NIS_Scaler.h")
+file(READ "${BV_NIS_SOURCE}" BV_NIS_HEX HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," BV_NIS_BYTES "${BV_NIS_HEX}")
+set(BV_NIS_HEADER "#pragma once\n// Generated from third_party/nis/NIS_Scaler.h (NVIDIA, MIT).\nstatic const unsigned char kNisScalerSource[] = {${BV_NIS_BYTES}0x00};\n")
+if(EXISTS "${BV_GEN_DIR}/NisScalerSource.h")
+  file(READ "${BV_GEN_DIR}/NisScalerSource.h" BV_NIS_OLD)
+endif()
+if(NOT BV_NIS_OLD STREQUAL BV_NIS_HEADER) # rewrite only on change: no needless rebuilds
+  file(WRITE "${BV_GEN_DIR}/NisScalerSource.h" "${BV_NIS_HEADER}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BV_NIS_SOURCE}")
+target_include_directories(blackvolt_core PRIVATE "${BV_GEN_DIR}" "${PROJECT_SOURCE_DIR}/third_party/nis")
 target_include_directories(blackvolt_core
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -85,7 +108,7 @@ endif()
 target_link_libraries(blackvolt_core PUBLIC nlohmann_json::nlohmann_json bv_ffmpeg)
 
 if(WIN32)
-  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi ole32 crypt32 advapi32 winmm iphlpapi ws2_32 mfplat mf mfuuid)
+  target_link_libraries(blackvolt_core PUBLIC d3d12 dxgi dxguid d3dcompiler dwmapi windowscodecs ole32 crypt32 advapi32 winmm iphlpapi ws2_32 mfplat mf mfuuid)
 endif()
 
 if(BV_HAS_NGX)

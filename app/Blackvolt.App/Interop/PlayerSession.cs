@@ -8,6 +8,8 @@ internal sealed class PlayerSession : IDisposable
 {
     private nint _handle;
 
+    internal nint Handle => _handle;
+
     private PlayerSession(nint handle) => _handle = handle;
 
     public static PlayerSession Create(EngineSession engine, SwapChainPanel panel)
@@ -24,6 +26,30 @@ internal sealed class PlayerSession : IDisposable
     public void Pause() => NativeEngine.PlayerPause(_handle);
     public void Seek(double seconds) => NativeEngine.PlayerSeek(_handle, seconds);
     public void SetVolume(float volume) => NativeEngine.PlayerSetVolume(_handle, volume);
+    public void SetRate(double rate) => NativeEngine.PlayerSetRate(_handle, rate);
+    public void SelectTrack(uint kind, int index) => NativeEngine.PlayerSelectTrack(_handle, kind, index);
+
+    public unsafe IReadOnlyList<NativeEngine.Track> Tracks()
+    {
+        NativeEngine.PlayerTracks(_handle, null, 0, out var count);
+        if (count == 0) return [];
+        var buffer = new NativeEngine.Track[count];
+        fixed (NativeEngine.Track* p = buffer)
+            NativeEngine.PlayerTracks(_handle, p, count, out count);
+        return buffer.Take((int)count).ToList();
+    }
+
+    private readonly byte[] _subtitle = new byte[2048];
+
+    /// <summary>Embedded subtitle text showing now ("" when none).</summary>
+    public unsafe string Subtitle()
+    {
+        fixed (byte* p = _subtitle)
+        {
+            if (NativeEngine.PlayerSubtitle(_handle, p, (uint)_subtitle.Length) != NativeEngine.Result.Ok) return "";
+            return Utf8.Read(p, _subtitle.Length);
+        }
+    }
     public void Resize(uint width, uint height, float scaleX, float scaleY) =>
         NativeEngine.PlayerResize(_handle, width, height, scaleX, scaleY);
 

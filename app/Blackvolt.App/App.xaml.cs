@@ -39,6 +39,12 @@ public partial class App : Application
         };
         MainWindow.Activate();
         _ = Services.Updater.CheckInBackgroundAsync();
+        // Like Veyra's package, DLSS NR should just be there: fetch it once on RTX GPUs. The
+        // installer passes --install-nr when the user ticked "install DLSS NR".
+        if (Environment.GetCommandLineArgs().Any(a => a.Equals("--install-nr", StringComparison.OrdinalIgnoreCase)))
+            Services.NrRuntimeInstaller.InstallForThisGpu();
+        else
+            Services.NrRuntimeInstaller.AutoInstallIfNeeded();
     }
 
     /// <summary>

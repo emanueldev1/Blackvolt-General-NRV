@@ -12,6 +12,48 @@
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </StackPanel>
 
+    <!-- Live: frame-time graph, FPS / 1 % low, VRAM -->
+    <Grid ColumnSpacing="12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Border Style="{StaticResource BvCardStyle}">
+        <StackPanel Spacing="8">
+          <Grid>
+            <TextBlock Text="TIEMPO DE FOTOGRAMA (últimos ~4 s)" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock x:Name="GraphScale" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}"
+                       FontFamily="Cascadia Mono, Consolas" />
+          </Grid>
+          <Grid x:Name="GraphHost" Height="140" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+            <Canvas x:Name="GraphCanvas">
+              <Polyline x:Name="GpuLine" Stroke="#FF50A0FF" StrokeThickness="1.3" />
+              <Polyline x:Name="FrameLine" Stroke="{StaticResource BvVoltBrush}" StrokeThickness="1.6" />
+            </Canvas>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Style="{StaticResource CaptionTextBlockStyle}"><Run Text="■ " Foreground="{StaticResource BvVoltBrush}" />Intervalo entre fotogramas</TextBlock>
+            <TextBlock Style="{StaticResource CaptionTextBlockStyle}"><Run Text="■ " Foreground="#FF50A0FF" />Tiempo de GPU</TextBlock>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <StackPanel Grid.Column="1" Spacing="12" Width="220">
+        <Border Style="{StaticResource BvCardStyle}">
+          <StackPanel>
+            <TextBlock Text="FPS · 1% BAJO" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock x:Name="LiveFps" Text="–" Style="{StaticResource BvMetricValueStyle}" />
+          </StackPanel>
+        </Border>
+        <Border Style="{StaticResource BvCardStyle}">
+          <StackPanel Spacing="6">
+            <TextBlock Text="VRAM DEL PROCESO" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock x:Name="LiveVram" Text="–" Style="{StaticResource BvMetricValueStyle}" FontSize="20" />
+            <ProgressBar x:Name="VramBar" Maximum="1" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Grid>
+
     <ItemsControl x:Name="StageList">
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="local:StageRow">

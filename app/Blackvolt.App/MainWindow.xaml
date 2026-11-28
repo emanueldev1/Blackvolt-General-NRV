@@ -51,5 +51,13 @@
       </NavigationView.MenuItems>
       <Frame x:Name="ContentFrame" />
     </NavigationView>
+
+    <!-- Background DLSS NR runtime install (first launch / user request) -->
+    <InfoBar x:Name="NrInstallBar" Grid.Row="1" IsOpen="False" IsClosable="True" Severity="Informational"
+             Title="DLSS NR" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" MaxWidth="460">
+      <InfoBar.Content>
+        <ProgressBar x:Name="NrInstallProgress" Maximum="1" Margin="0,0,0,12" />
+      </InfoBar.Content>
+    </InfoBar>
   </Grid>
 </Window>

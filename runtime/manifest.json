@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "comment": "Known NVIDIA NGX runtime builds. 'bundled' files ship inside Release packages; the others are only recognised when the user imports them.",
+  "comment": "Known NVIDIA NGX runtime builds. 'bundled' files ship inside Release packages; the others are only recognised when the user imports or downloads them. DLSS NR builds carry a 'slot': 'compat' (RTX 20-50) or 'original' (RTX 50).",
   "runtimes": [
     {
       "feature": "dlss_sr", "file": "nvngx_dlss.dll", "version": "310.9.16.0", "sha256": "d00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e",
@@ -26,6 +26,31 @@
       "feature": "rtx_vsr", "file": "nvngx_vsr.dll", "version": "1.8.3.0", "sha256": "0cc98643a76c05ca6d73ec81a898d545b18e5c080667d72854a1bfaebd56e1ed",
       "bytes": 59120752, "origin": "official", "label": "RTX Video Super Resolution 1.8.3 (NVIDIA)", "bundled": false,
       "source": "nvidia-vfx 0.2.0.0 wheel"
+    },
+    {
+      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.9.16.0", "sha256": "cdfa6c1ec784867182164c7836f324f087b5c9f374d0c9fe46f54999feabf3ed",
+      "bytes": 276162560, "origin": "community", "slot": "compat", "label": "DLSS NR compatible SF 310.9.16 FP16 (RTX 20-50)", "bundled": false,
+      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.9.16 (= Veyra 2.2 nr-ampere)"
+    },
+    {
+      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.8.2.0", "sha256": "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927",
+      "bytes": 165830144, "origin": "community", "slot": "compat", "label": "DLSS NR compatible SF-v2 310.8.2 (RTX 20-50)", "bundled": false,
+      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.8.SF-v2"
+    },
+    {
+      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.8.0.0", "sha256": "e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e",
+      "bytes": 165840496, "origin": "official", "slot": "original", "label": "DLSS NR 310.8.0 original de NVIDIA (RTX 50)", "bundled": false,
+      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.8.0 (= Veyra nr-original)"
+    },
+    {
+      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.9.16.0", "sha256": "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f",
+      "bytes": 266424944, "origin": "official", "slot": "original", "label": "DLSS NR 310.9.16 original de NVIDIA (RTX 50)", "bundled": false,
+      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.9.16-nvidia"
+    },
+    {
+      "feature": "dlss_nr", "file": "nvngx_dlssnr.dll", "version": "310.8.3.0", "sha256": "f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc",
+      "bytes": 165840496, "origin": "community", "slot": "original", "label": "DLSS NR Lecram 310.8.3 (RTX 50)", "bundled": false,
+      "source": "https://github.com/RankFTW/rhi-repo/releases/tag/dlssnr-310.8.Lecram"
     }
   ]
 }

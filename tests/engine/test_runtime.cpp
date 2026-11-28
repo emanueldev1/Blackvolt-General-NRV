@@ -41,11 +41,20 @@ TEST(repo_manifest_parses) {
     CHECK(m.has_value());
     if (!m) { std::printf("  %s\n", error.c_str()); return; }
     CHECK(m->forFeature(BV_FEATURE_DLSS_SR).size() == 1);
-    // No DLSS NR runtime is shipped or recognised until NVIDIA publishes it officially.
-    CHECK(m->forFeature(BV_FEATURE_DLSS_NR).empty());
     const auto* sr = m->findByHash("D00B5B0AB29C3CA101B70C3A5ECB3A01B7EF33766A3383A28A18623083E6123E");
     CHECK(sr && sr->bundled && sr->origin == Origin::Official);
-    for (const auto& r : m->entries()) CHECK(r.origin == Origin::Official);
+    // DLSS NR builds are recognised (never bundled) and each one names its slot.
+    const auto nr = m->forFeature(BV_FEATURE_DLSS_NR);
+    CHECK(!nr.empty());
+    for (const auto* r : nr) {
+        CHECK(!r->bundled);
+        CHECK(r->slot == "compat" || r->slot == "original");
+    }
+    const auto* sf = m->findByHash("cdfa6c1ec784867182164c7836f324f087b5c9f374d0c9fe46f54999feabf3ed");
+    CHECK(sf && sf->slot == "compat" && sf->origin == Origin::Community);
+    for (const auto& r : m->entries()) {
+        if (r.feature != BV_FEATURE_DLSS_NR) CHECK(r.origin == Origin::Official);
+    }
 }
 
 TEST(manifest_rejects_bad_input) {
@@ -149,4 +158,37 @@ TEST(legacy_slot_preferred_on_turing_ampere) {
     CHECK(catalog.locate(BV_FEATURE_DLSS_NR)->path == tmp.path / "bundled/nvngx_dlssnr.dll");
     catalog.setPreferLegacy(true);
     CHECK(catalog.locate(BV_FEATURE_DLSS_NR)->path == tmp.path / "bundled/legacy/nvngx_dlssnr.dll");
+}
+
+TEST(nr_variants_live_in_their_own_folders) {
+    TempDir tmp;
+    const std::string dll = "MZ fake NR build";
+    const auto sha = Sha256::ofBytes(bytesOf(dll));
+    writeFile(tmp.path / "manifest.json", manifestFor(sha, dll.size()));
+    // Veyra's portable layout.
+    writeFile(tmp.path / "veyra/runtime/experimental/nr-ampere/nvngx_dlssnr.dll", dll);
+    writeFile(tmp.path / "veyra/runtime/experimental/nr-original/nvngx_dlssnr.dll", dll);
+
+    Catalog catalog({tmp.path / "bundled", tmp.path / "user", tmp.path / "manifest.json"});
+    using bv::ngx::NrVariant;
+    CHECK(catalog.nrFolder(NrVariant::Compat).empty());
+
+    const auto found = catalog.scan(tmp.path / "veyra");
+    CHECK(found.size() == 2);
+    int compat = 0, original = 0;
+    for (const auto& c : found) {
+        compat += c.nrVariant == NrVariant::Compat;
+        original += c.nrVariant == NrVariant::Original;
+    }
+    CHECK(compat == 1 && original == 1);
+
+    for (const auto& c : found) CHECK(catalog.importNr(c.path, c.nrVariant, nullptr) == Catalog::ImportError::None);
+    CHECK(catalog.nrFolder(NrVariant::Compat) == tmp.path / "user/nr/compat");
+    CHECK(catalog.nrFolder(NrVariant::Original) == tmp.path / "user/nr/original");
+    CHECK(catalog.locate(BV_FEATURE_DLSS_NR)->path == tmp.path / "user/nr/compat/nvngx_dlssnr.dll");
+    CHECK(catalog.importNr(found[0].path, NrVariant::Auto, nullptr) == Catalog::ImportError::WrongFeature);
+
+    CHECK(catalog.removeNr(NrVariant::Compat));
+    CHECK(catalog.nrFolder(NrVariant::Compat).empty());
+    CHECK(catalog.locate(BV_FEATURE_DLSS_NR)->path == tmp.path / "user/nr/original/nvngx_dlssnr.dll");
 }

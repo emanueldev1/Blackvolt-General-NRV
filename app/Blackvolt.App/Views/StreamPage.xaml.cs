@@ -20,6 +20,7 @@ public sealed partial class StreamPage : Page
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private readonly EnhancePanel _enhance = new();
+    private readonly PerfOverlay _perf = new();
     private readonly HashSet<VirtualKey> _keys = [];
     private RemoteStream? _stream;
     private StreamRequest? _request;
@@ -33,6 +34,7 @@ public sealed partial class StreamPage : Page
         _timer.Tick += (_, _) => Tick();
         _enhance.Changed += () => _stream?.SetEnhance(AppSettings.Current.Video);
         EnhanceButton.Flyout = new Flyout { Content = _enhance };
+        StatsPanel.Child = _perf;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -136,7 +138,8 @@ public sealed partial class StreamPage : Page
         QualityChip.Visibility = streaming ? Visibility.Visible : Visibility.Collapsed;
         if (streaming)
         {
-            var extras = (enhance.Flags.HasFlag(NativeEnhance.Flags.VsrActive) ? " · RTX VSR" : "") +
+            var extras = (enhance.Flags.HasFlag(NativeEnhance.Flags.NeuralActive) ? " · DLSS NR" : "") +
+                         (enhance.Flags.HasFlag(NativeEnhance.Flags.VsrActive) ? " · RTX VSR" : "") +
                          (enhance.Flags.HasFlag(NativeEnhance.Flags.HdrActive) ? " · HDR" : "");
             QualityText.Text = $"{info.Height}p · {info.CodecText} · {info.BitrateMbps:0.0} Mbps{extras}";
             var p99 = App.Engine?.GetStats("stream.latency") is { Samples: > 0 } lat ? lat.P99Us / 1000.0 : 0;
@@ -156,18 +159,17 @@ public sealed partial class StreamPage : Page
     {
         var latency = App.Engine?.GetStats("stream.latency");
         var decode = App.Engine?.GetStats("stream.decode");
-        StatsText.Text =
-            $"{info.Width}×{info.Height}  {info.CodecText}  {(info.HardwareDecode != 0 ? "GPU (D3D12)" : "CPU")}\n" +
-            $"fps          {info.Fps,8:0.0}\n" +
-            $"bitrate      {info.BitrateMbps,8:0.0} Mbps\n" +
-            $"red (RTT)    {info.RttMs,8:0.0} ms\n" +
-            $"decodif.     {Ms(decode?.AvgUs),8} ms\n" +
-            $"latencia p50 {Ms(latency?.P50Us),8} ms\n" +
-            $"latencia p95 {Ms(latency?.P95Us),8} ms\n" +
-            $"perdidos     {info.FramesLost,8}\n" +
-            $"recuperados  {info.FramesRecovered,8}\n" +
-            $"reconexiones {info.Reconnects,8}" +
-            (NativeEnhance.Describe(enhance) is { Length: > 0 } gpu ? "\n" + gpu : "");
+        var lines = new List<PerfLine>
+        {
+            new("Stream", $"{info.Fps:0.0} fps · {info.BitrateMbps:0.0} Mbps · {(info.HardwareDecode != 0 ? "GPU" : "CPU")}"),
+            new("Red (RTT)", $"{info.RttMs:0.0} ms"),
+            new("Decodificación", $"{Ms(decode?.AvgUs)} ms"),
+            new("Latencia", $"p50 {Ms(latency?.P50Us)} · p95 {Ms(latency?.P95Us)} ms"),
+            new("Fotogramas", $"{info.FramesLost} perdidos · {info.FramesRecovered} recuperados"),
+            new("Reconexiones", info.Reconnects.ToString()),
+        };
+        _perf.Update(App.Engine, $"{info.Width}×{info.Height} {info.CodecText}", "stream.latency", stageIsInterval: false,
+                     info.Fps > 0 ? 1000.0 / info.Fps : 0, enhance, lines);
     }
 
     private static string Ms(double? us) => us is > 0 ? (us.Value / 1000.0).ToString("0.00") : "–";
@@ -216,6 +218,14 @@ public sealed partial class StreamPage : Page
         {
             case VirtualKey.F11: ToggleFullscreen(); e.Handled = true; return;
             case VirtualKey.F3: ToggleStats(); e.Handled = true; return;
+            case VirtualKey.F12:
+                e.Handled = true;
+                if (_stream is { } stream)
+                {
+                    var path = NativeEnhance.NewScreenshotPath();
+                    _ = Task.Run(() => stream.Screenshot(path));
+                }
+                return;
             case VirtualKey.Escape when IsFullscreen: SetFullscreen(false); e.Handled = true; return;
             case VirtualKey.P: _stream?.PsButton(); e.Handled = true; return;
         }

@@ -6,7 +6,7 @@ namespace Blackvolt.App.Interop;
 internal static partial class NativeEngine
 {
     private const string Dll = "blackvolt_engine";
-    public const uint ApiVersion = 8;
+    public const uint ApiVersion = 9;
     public const uint BestAdapter = uint.MaxValue;
 
     public enum Result : int
@@ -110,10 +110,57 @@ internal static partial class NativeEngine
         public RuntimeOrigin Origin;
         public fixed byte Label[96];
         public fixed byte Path[520];
+        public NrVariant NrVariant;
 
         public readonly string LabelText { get { fixed (byte* p = Label) return Utf8.Read(p, 96); } }
         public readonly string PathText { get { fixed (byte* p = Path) return Utf8.Read(p, 520); } }
     }
+
+    /// <summary>DLSS NR builds: compatible (RTX 20-50) and NVIDIA original (RTX 50).</summary>
+    public enum NrVariant : uint { Auto = 0, Compat = 1, Original = 2 }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct NrRuntimeInfo
+    {
+        public uint Size;
+        public NrVariant Variant;
+        public uint Installed;
+        public RuntimeOrigin Origin;
+        public ulong Bytes;
+        public fixed byte Version[32];
+        public fixed byte Label[96];
+        public fixed byte Sha256[72];
+        public fixed byte Path[520];
+
+        public readonly string VersionText { get { fixed (byte* p = Version) return Utf8.Read(p, 32); } }
+        public readonly string LabelText { get { fixed (byte* p = Label) return Utf8.Read(p, 96); } }
+        public readonly string Sha256Text { get { fixed (byte* p = Sha256) return Utf8.Read(p, 72); } }
+        public readonly string PathText { get { fixed (byte* p = Path) return Utf8.Read(p, 520); } }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GpuMemory
+    {
+        public uint Size;
+        public ulong UsageBytes;
+        public ulong BudgetBytes;
+        public ulong DedicatedBytes;
+    }
+
+    [LibraryImport(Dll, EntryPoint = "bv_nr_runtime_get")]
+    public static partial Result NrRuntimeGet(NrVariant variant, ref NrRuntimeInfo info);
+
+    [LibraryImport(Dll, EntryPoint = "bv_nr_runtime_import", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial Result NrRuntimeImport(string sourcePath, NrVariant variant, ref NrRuntimeInfo info);
+
+    [LibraryImport(Dll, EntryPoint = "bv_nr_runtime_remove")]
+    public static partial Result NrRuntimeRemove(NrVariant variant);
+
+    [LibraryImport(Dll, EntryPoint = "bv_engine_stage_history", StringMarshalling = StringMarshalling.Utf8)]
+    public static unsafe partial Result GetStageHistory(nint engine, string stage, float* output, uint capacity, out uint count);
+
+    [LibraryImport(Dll, EntryPoint = "bv_engine_gpu_memory")]
+    public static partial Result GetGpuMemory(nint engine, ref GpuMemory memory);
 
     [LibraryImport(Dll, EntryPoint = "bv_set_runtime_paths", StringMarshalling = StringMarshalling.Utf8)]
     public static partial Result SetRuntimePaths(string bundledDir, string userDir, string manifest);
@@ -146,6 +193,9 @@ internal static partial class NativeEngine
         public fixed byte Codec[32];
         public fixed byte Error[256];
         public uint Live;
+        public ulong FramesGenerated;
+        public int AudioTrack;
+        public int SubtitleTrack;
 
         public readonly string CodecText { get { fixed (byte* p = Codec) return Utf8.Read(p, 32); } }
         public readonly string ErrorText { get { fixed (byte* p = Error) return Utf8.Read(p, 256); } }
@@ -177,6 +227,33 @@ internal static partial class NativeEngine
 
     [LibraryImport(Dll, EntryPoint = "bv_player_set_volume")]
     public static partial Result PlayerSetVolume(nint player, float volume);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct Track
+    {
+        public uint Size;
+        public int Index;
+        public uint Kind; // 0 audio, 1 subtitle
+        public fixed byte Language[16];
+        public fixed byte Title[96];
+        public fixed byte Codec[32];
+
+        public readonly string LanguageText { get { fixed (byte* p = Language) return Utf8.Read(p, 16); } }
+        public readonly string TitleText { get { fixed (byte* p = Title) return Utf8.Read(p, 96); } }
+        public readonly string CodecText { get { fixed (byte* p = Codec) return Utf8.Read(p, 32); } }
+    }
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_tracks")]
+    public static unsafe partial Result PlayerTracks(nint player, Track* output, uint capacity, out uint count);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_select_track")]
+    public static partial Result PlayerSelectTrack(nint player, uint kind, int index);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_subtitle")]
+    public static unsafe partial Result PlayerSubtitle(nint player, byte* output, uint size);
+
+    [LibraryImport(Dll, EntryPoint = "bv_player_set_rate")]
+    public static partial Result PlayerSetRate(nint player, double rate);
 
     [LibraryImport(Dll, EntryPoint = "bv_player_info_get")]
     public static partial Result PlayerInfoGet(nint player, out PlayerInfo info);

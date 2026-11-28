@@ -13,16 +13,21 @@
 #include <d3dcompiler.h>
 #include <dwmapi.h>
 #include <dxgi1_6.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 extern "C" {
 #include <libavutil/hwcontext_d3d12va.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libswscale/swscale.h>
 }
 
@@ -37,15 +42,20 @@ constexpr DXGI_FORMAT kSdrFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
 constexpr DXGI_FORMAT kHdrFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 constexpr DXGI_FORMAT kRgbaFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // what VSR and TrueHDR consume
 constexpr UINT kSrvPerPass = 3;
-constexpr UINT kSrvPerFrame = 2 * kSrvPerPass; // pass A (decode -> RGB) + final pass
-constexpr UINT kStamps = 6;                    // start, converted, neural, vsr, hdr, end
+constexpr UINT kSrvPerFrame = 3 * kSrvPerPass; // pass A (decode -> RGB), final pass, A/B original
+// start, converted, NR prepared, NR evaluated, NR composited, interpolated, vsr, hdr, end
+constexpr UINT kStamps = 9;
 constexpr double kSmoothing = 0.1;
 
 // Fullscreen triangle.
 // mode 0: YUV planes -> RGB with a matrix.  mode 1: RGB texture as is.
 // mode 2: sRGB texture -> linear scRGB (an SDR frame shown on the FP16 swapchain).
 constexpr char kShader[] = R"(
-cbuffer Params : register(b0) { float4 row0; float4 row1; float4 row2; float4 uvScale; uint mode; };
+cbuffer Params : register(b0) {
+    float4 row0; float4 row1; float4 row2; float4 uvScale;
+    uint mode; uint transfer; uint hdrOut; uint pad0;   // transfer: 0 SDR, 1 PQ (HDR10), 2 HLG
+    float sdrWhite; float contentPeak; float2 pad1;     // nits
+};
 Texture2D<float>  lumaTex   : register(t0);
 Texture2D<float2> chromaTex : register(t1);
 Texture2D<float4> rgbTex    : register(t2);
@@ -65,11 +75,58 @@ float3 srgbToLinear(float3 c) {
     return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
 }
 
+float3 linearToSrgb(float3 c) {
+    c = saturate(c);
+    return c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+
+// SMPTE ST 2084 (PQ) EOTF: code value -> nits.
+float3 pqToNits(float3 e) {
+    const float m1 = 0.1593017578125, m2 = 78.84375, c1 = 0.8359375, c2 = 18.8515625, c3 = 18.6875;
+    const float3 p = pow(saturate(e), 1.0 / m2);
+    return 10000.0 * pow(max(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1);
+}
+
+// ARIB STD-B67 (HLG): inverse OETF, then the OOTF for a 1000-nit display (system gamma 1.2).
+float3 hlgToNits(float3 e) {
+    const float a = 0.17883277, b = 0.28466892, c = 0.55991073;
+    e = saturate(e);
+    const float3 scene = e <= 0.5 ? e * e / 3.0 : (exp((e - c) / a) + b) / 12.0;
+    const float y = dot(scene, float3(0.2627, 0.6780, 0.0593));
+    return 1000.0 * scene * pow(max(y, 1e-6), 0.2);
+}
+
+static const float3x3 kBt2020To709 = {
+     1.6605, -0.5876, -0.0728,
+    -0.1246,  1.1329, -0.0083,
+    -0.0182, -0.1006,  1.1187,
+};
+
+// HDR -> SDR: luminance-based extended Reinhard up to the content's real peak (keeps hue), then a
+// soft roll-off of channels pushed above white so saturated highlights do not clip harshly.
+float3 toneMap(float3 nits) {
+    float3 l = nits / sdrWhite;
+    const float w = max(contentPeak / sdrWhite, 1.0);
+    const float y = dot(l, float3(0.2126, 0.7152, 0.0722));
+    const float yt = y * (1.0 + y / (w * w)) / (1.0 + y);
+    if (y > 0) l *= yt / y;
+    const float m = max(l.r, max(l.g, l.b));
+    if (m > 1.0) l = lerp(l / m, float3(1, 1, 1), saturate((m - 1.0) * 0.5));
+    return l;
+}
+
 float4 PSMain(VSOut i) : SV_Target {
     if (mode == 1) return float4(rgbTex.Sample(linearSampler, i.uv).rgb, 1);
     if (mode == 2) return float4(srgbToLinear(saturate(rgbTex.Sample(linearSampler, i.uv).rgb)), 1);
     float4 yuv = float4(lumaTex.Sample(linearSampler, i.uv), chromaTex.Sample(linearSampler, i.uv), 1);
-    return float4(saturate(float3(dot(row0, yuv), dot(row1, yuv), dot(row2, yuv))), 1);
+    const float3 rgb = float3(dot(row0, yuv), dot(row1, yuv), dot(row2, yuv));
+    if (transfer != 0) {
+        const float3 nits = transfer == 1 ? pqToNits(rgb) : hlgToNits(rgb);
+        const float3 lin = max(mul(kBt2020To709, nits), 0.0);
+        if (hdrOut != 0) return float4(lin / 80.0, 1);   // scRGB: 1.0 = 80 nits
+        return float4(linearToSrgb(toneMap(lin)), 1);
+    }
+    return float4(saturate(rgb), 1);
 }
 )";
 
@@ -77,7 +134,12 @@ struct alignas(16) Params {
     std::array<float, 12> matrix;
     float uvScale[4];
     uint32_t mode;
-    uint32_t pad[3];
+    uint32_t transfer; // 0 SDR, 1 PQ, 2 HLG
+    uint32_t hdrOut;   // 1 = write scRGB (HDR passthrough), 0 = tone map to SDR
+    uint32_t pad0;
+    float sdrWhite;
+    float contentPeak;
+    float pad1[2];
 };
 
 YuvMatrix matrixFor(const AVFrame& f) {
@@ -122,6 +184,35 @@ void smooth(float& slot, double value) {
 
 } // namespace
 
+// PNG through WIC (32-bit BGRA, alpha ignored). UTF-8 path.
+bool savePng(const std::string& path, UINT w, UINT h, const uint8_t* bgra) {
+    const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool ok = false;
+    {
+        ComPtr<IWICImagingFactory> factory;
+        ComPtr<IWICStream> stream;
+        ComPtr<IWICBitmapEncoder> encoder;
+        ComPtr<IWICBitmapFrameEncode> frame;
+        const int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+        std::wstring wide(n > 0 ? n - 1 : 0, L'\0');
+        if (n > 0) MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wide.data(), n);
+        WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+        ok = SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+             SUCCEEDED(factory->CreateStream(&stream)) &&
+             SUCCEEDED(stream->InitializeFromFilename(wide.c_str(), GENERIC_WRITE)) &&
+             SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
+             SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
+             SUCCEEDED(encoder->CreateNewFrame(&frame, nullptr)) && SUCCEEDED(frame->Initialize(nullptr)) &&
+             SUCCEEDED(frame->SetSize(w, h)) && SUCCEEDED(frame->SetPixelFormat(&format)) &&
+             format == GUID_WICPixelFormat32bppBGRA &&
+             SUCCEEDED(frame->WritePixels(h, w * 4, w * h * 4, const_cast<BYTE*>(bgra))) && SUCCEEDED(frame->Commit()) &&
+             SUCCEEDED(encoder->Commit());
+    }
+    if (SUCCEEDED(co)) CoUninitialize();
+    if (!ok) log::warn("screenshot: could not write {}", path);
+    return ok;
+}
+
 bool displayHdrInfo(float* peakNits) {
     ComPtr<IDXGIFactory6> factory;
     if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)))) return false;
@@ -150,6 +241,8 @@ struct D3D12Presenter::Impl {
     ID3D12CommandQueue* queue = nullptr;
     ngx::NgxRuntime* ngx = nullptr;
     telemetry::StageStats* convertStage = nullptr;
+    telemetry::StageStats* nrStage = nullptr;
+    telemetry::StageStats* nrCompositeStage = nullptr;
     telemetry::StageStats* vsrStage = nullptr;
     telemetry::StageStats* hdrStage = nullptr;
     telemetry::StageStats* gpuStage = nullptr;
@@ -171,6 +264,11 @@ struct D3D12Presenter::Impl {
 
     std::array<ComPtr<ID3D12CommandAllocator>, kBackBuffers> allocators;
     ComPtr<ID3D12GraphicsCommandList> list;
+    // DLSS NR must be evaluated on a command list that has recorded nothing before it, so a frame
+    // with NR is split: "list" up to the NR input, then "nrList" for everything after.
+    std::array<ComPtr<ID3D12CommandAllocator>, kBackBuffers> nrAllocators;
+    ComPtr<ID3D12GraphicsCommandList> nrList;
+    ID3D12GraphicsCommandList* cmd = nullptr; // the list being recorded
     ComPtr<ID3D12CommandAllocator> setupAllocator;
     ComPtr<ID3D12GraphicsCommandList> setupList;
     ComPtr<ID3D12Fence> fence;
@@ -203,11 +301,30 @@ struct D3D12Presenter::Impl {
     std::unique_ptr<ngx::VideoSuperResolution> vsr;
     UINT vsrInW = 0, vsrInH = 0, vsrOutW = 0, vsrOutH = 0;
     std::unique_ptr<ngx::TrueHdr> trueHdr;
+    // Frame interpolation: slot curSlot holds the last real frame shown, 1-curSlot the staged
+    // next one (already converted and through NR) while generated frames are shown.
+    std::unique_ptr<enhance::FrameInterpolation> interp;
+    std::unique_ptr<enhance::Denoise> denoiser;
+    std::unique_ptr<enhance::NisScaler> nis;
+    std::unique_ptr<enhance::PostFx> postfx;
+    bool postfxWasOn = false;
+    bool denoiseWasOn = false;
+    uint32_t curSlot = 0;
+    bool curSlotValid = false, stagedValid = false;
+    int64_t stagedPts = AV_NOPTS_VALUE;
+    // Screenshot request, served by the next draw.
+    std::string screenshotPath;
+    bool screenshotDone = false, screenshotOk = false;
+    ComPtr<ID3D12Resource> shotReadback;
+    enhance::NrLocator nrLocator;
     std::unique_ptr<enhance::NeuralRendering> neural;
-    bool neuralUnavailable = false;
-    std::string neuralNote;
-    ComPtr<ID3D12Resource> neuralOut;
+    enhance::NeuralControls neuralBuilt{}; // controls the feature was created with
     UINT neuralW = 0, neuralH = 0;
+    bool neuralUnavailable = false;
+    bool neuralMissingRuntime = false; // failed only because no nvngx_dlssnr.dll was installed
+    ULONGLONG neuralRetryTick = 0;
+    std::chrono::steady_clock::time_point lastNrEval{}; // anti-flicker step
+    std::string neuralNote;
     int64_t lastPts = AV_NOPTS_VALUE;
 
     AVFrame* last = nullptr; // for redraw()
@@ -216,6 +333,10 @@ struct D3D12Presenter::Impl {
     ~Impl() {
         waitIdle();
         neural.reset();
+        interp.reset();
+        denoiser.reset();
+        nis.reset();
+        postfx.reset();
         vsr.reset();
         trueHdr.reset();
         for (auto*& f : inFlight) av_frame_free(&f);
@@ -276,6 +397,9 @@ struct D3D12Presenter::Impl {
         for (auto& a : allocators) device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&a));
         device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocators[0].Get(), nullptr, IID_PPV_ARGS(&list));
         list->Close();
+        for (auto& a : nrAllocators) device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&a));
+        device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, nrAllocators[0].Get(), nullptr, IID_PPV_ARGS(&nrList));
+        nrList->Close();
         device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&setupAllocator));
         device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, setupAllocator.Get(), nullptr,
                                   IID_PPV_ARGS(&setupList));
@@ -432,7 +556,11 @@ struct D3D12Presenter::Impl {
     // Decides what runs for this frame and makes sure the features and textures exist.
     // Called before a back buffer is acquired, because it may recreate the swapchain.
     struct Plan {
-        bool enhanced = false, neural = false, vsr = false, hdr = false;
+        bool enhanced = false, neural = false, vsr = false, nis = false, hdr = false, interp = false, denoise = false,
+             postfx = false;
+        uint32_t transfer = 0;    // source: 0 SDR, 1 PQ, 2 HLG
+        bool passthrough = false; // HDR source shown as HDR (scRGB swapchain)
+        float contentPeak = 1000; // nits, from the stream's metadata when present
         UINT outW = 0, outH = 0;
         Viewport vp{};
     };
@@ -452,7 +580,23 @@ struct D3D12Presenter::Impl {
         p.outH = std::max<UINT>(1, static_cast<UINT>(std::lround(fit.height)));
         const UINT inW = static_cast<UINT>(frame.width), inH = static_cast<UINT>(frame.height);
 
-        if (settings.trueHdr) {
+        // HDR sources (hardware frames): PQ / HLG, and their real peak for tone mapping.
+        if (frame.format == AV_PIX_FMT_D3D12) {
+            if (frame.color_trc == AVCOL_TRC_SMPTE2084) p.transfer = 1;
+            else if (frame.color_trc == AVCOL_TRC_ARIB_STD_B67) p.transfer = 2;
+        }
+        if (p.transfer) {
+            if (const auto* sd = av_frame_get_side_data(&frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL)) {
+                const auto* cll = reinterpret_cast<const AVContentLightMetadata*>(sd->data);
+                if (cll->MaxCLL > 100) p.contentPeak = static_cast<float>(cll->MaxCLL);
+            } else if (const auto* md = av_frame_get_side_data(&frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA)) {
+                const auto* mdm = reinterpret_cast<const AVMasteringDisplayMetadata*>(md->data);
+                if (mdm->has_luminance && mdm->max_luminance.den)
+                    p.contentPeak = std::max(100.0f, static_cast<float>(av_q2d(mdm->max_luminance)));
+            }
+            p.contentPeak = std::clamp(p.contentPeak, 203.0f, 10000.0f);
+        }
+        if (settings.trueHdr || p.transfer) {
             if (factory && !factory->IsCurrent()) { // display configuration changed
                 factory.Reset();
                 CreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
@@ -462,29 +606,59 @@ struct D3D12Presenter::Impl {
             if (!hdrDisplay) status.flags |= EnhanceStatus::DisplaySdr;
         }
 
-        // Neural rendering at source size, first in the chain (no implementation ships yet).
+        // DLSS NR first in the chain, on the decoded picture (internally at its own size).
+        // A runtime downloaded while playing is picked up within a second.
+        if (settings.neural && neuralUnavailable && neuralMissingRuntime && nrLocator && GetTickCount64() - neuralRetryTick > 1000) {
+            neuralRetryTick = GetTickCount64();
+            const auto wanted = settings.neuralControls.variant;
+            const bool present = wanted == ngx::NrVariant::Auto
+                                     ? !nrLocator(ngx::NrVariant::Compat).empty() || !nrLocator(ngx::NrVariant::Original).empty()
+                                     : !nrLocator(wanted).empty();
+            if (present) neuralUnavailable = neuralMissingRuntime = false;
+        }
         p.neural = settings.neural && !neuralUnavailable;
-        if (p.neural && (!neural || neuralW != inW || neuralH != inH)) {
+        if (p.neural && (!neural || neuralW != inW || neuralH != inH || !neuralBuilt.sameFeature(settings.neuralControls))) {
             waitIdle();
             neural.reset();
             neuralNote.clear();
             neural = runSetup([&](ID3D12GraphicsCommandList* cl) {
-                return enhance::createNeuralRendering(ngx, cl, inW, inH, &neuralNote);
+                return enhance::NeuralRendering::create(ngx, device, cl, nrLocator, inW, inH, settings.neuralControls,
+                                                        &neuralNote);
             });
+            neuralBuilt = settings.neuralControls;
+            neuralW = inW;
+            neuralH = inH;
             if (!neural) {
                 neuralUnavailable = true;
                 p.neural = false;
-                log::info("neural rendering not available: {}", neuralNote);
+                const auto wanted = settings.neuralControls.variant;
+                neuralMissingRuntime = nrLocator && (wanted == ngx::NrVariant::Auto
+                                                         ? nrLocator(ngx::NrVariant::Compat).empty() &&
+                                                               nrLocator(ngx::NrVariant::Original).empty()
+                                                         : nrLocator(wanted).empty());
+                log::info("DLSS NR not available: {}", neuralNote);
             }
         }
-        if (p.neural && !ensureTexture(neuralOut, neuralW, neuralH, inW, inH, kRgbaFormat,
-                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
-            p.neural = false;
+        if (!settings.neural && neural) {
+            waitIdle();
+            neural.reset(); // free the VRAM and the NR session when the user turns it off
         }
         if (settings.neural && neuralUnavailable) status.flags |= EnhanceStatus::NeuralUnavailable;
         status.neuralNote = settings.neural && neuralUnavailable ? neuralNote : std::string();
+        if (p.neural && neural) {
+            status.nrWidth = neural->nrWidth();
+            status.nrHeight = neural->nrHeight();
+            status.nrVariant = neural->variant();
+            status.nrLabel = neural->label();
+        } else {
+            status.nrWidth = status.nrHeight = 0;
+            status.nrVariant = ngx::NrVariant::Auto;
+            status.nrLabel.clear();
+        }
 
-        p.vsr = settings.vsr && ngx && !vsrUnavailable;
+        // NVIDIA Image Scaling: chosen, or the fallback when RTX VSR cannot run (no NGX, AMD, Intel).
+        const bool wantNis = settings.vsr && (settings.scaler == 1 || !ngx || vsrUnavailable);
+        p.vsr = settings.vsr && ngx && !vsrUnavailable && !wantNis;
         if (p.vsr && (p.outW < inW || p.outH < inH || p.outW > 4 * inW || p.outH > 4 * inH)) {
             // Shown smaller than decoded (or beyond VSR's 4x limit): bilinear is the right tool.
             p.vsr = false;
@@ -515,13 +689,69 @@ struct D3D12Presenter::Impl {
                 p.hdr = false;
             }
         }
-        if (settings.vsr && vsrUnavailable) status.flags |= EnhanceStatus::VsrUnavailable;
+        if (wantNis) {
+            if (p.outW < inW || p.outH < inH) {
+                status.flags |= EnhanceStatus::VsrBypassed;
+            } else {
+                uint32_t nisW = 0, nisH = 0;
+                enhance::NisScaler::outputSize(inW, inH, p.outW, p.outH, nisW, nisH);
+                if (!nis || nis->inWidth() != inW || nis->inHeight() != inH || nis->outWidth() != nisW ||
+                    nis->outHeight() != nisH) {
+                    waitIdle();
+                    nis.reset();
+                    nis = runSetup([&](ID3D12GraphicsCommandList* cl) {
+                        return enhance::NisScaler::create(device, cl, inW, inH, nisW, nisH);
+                    });
+                }
+                p.nis = nis != nullptr;
+            }
+        } else if (nis) {
+            waitIdle();
+            nis.reset();
+        }
+        if (settings.vsr && vsrUnavailable && !p.nis) status.flags |= EnhanceStatus::VsrUnavailable;
         if (settings.trueHdr && hdrUnavailable) status.flags |= EnhanceStatus::HdrUnavailable;
 
-        p.enhanced = p.neural || p.vsr || p.hdr;
+        // Interpolation and A/B need the picture as RGBA, so they force the enhancement chain.
+        p.interp = settings.interpolation > 1;
+        if (p.interp && (!interp || interp->width() != inW || interp->height() != inH)) {
+            waitIdle();
+            interp = enhance::FrameInterpolation::create(device, inW, inH);
+            curSlotValid = stagedValid = false;
+        }
+        if (!p.interp && interp) {
+            waitIdle();
+            interp.reset();
+            curSlotValid = stagedValid = false;
+        }
+        p.interp = p.interp && interp;
+        // Denoise: before NR, at source size. Switching it changes NR's input, so wait for the GPU.
+        p.denoise = settings.denoise > 0;
+        if (p.denoise != denoiseWasOn) {
+            waitIdle();
+            denoiseWasOn = p.denoise;
+        }
+        if (p.denoise && (!denoiser || denoiser->width() != inW || denoiser->height() != inH)) {
+            waitIdle();
+            denoiser = enhance::Denoise::create(device, inW, inH);
+        }
+        if (!p.denoise && denoiser) denoiser.reset();
+        p.denoise = p.denoise && denoiser;
+        // Colour / FXAA after NR, at source size. Toggling it changes later stages' input.
+        p.postfx = !settings.color.identity();
+        if (p.postfx != postfxWasOn) {
+            waitIdle();
+            postfxWasOn = p.postfx;
+        }
+        if (p.postfx && (!postfx || postfx->width() != inW || postfx->height() != inH)) {
+            waitIdle();
+            postfx = enhance::PostFx::create(device, inW, inH);
+        }
+        p.postfx = p.postfx && postfx;
+        p.enhanced = p.neural || p.vsr || p.nis || p.hdr || p.interp || p.denoise || p.postfx || settings.compare;
         if (p.enhanced) {
             if (!ensureTexture(srcRgb, srcW, srcH, inW, inH, kRgbaFormat, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, kShaderRead)) {
-                p.enhanced = p.neural = p.vsr = p.hdr = false;
+                p.enhanced = p.neural = p.vsr = p.hdr = p.interp = false;
             } else {
                 D3D12_CPU_DESCRIPTOR_HANDLE rtv{rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + kBackBuffers * rtvSize};
                 device->CreateRenderTargetView(srcRgb.Get(), nullptr, rtv);
@@ -531,19 +761,26 @@ struct D3D12Presenter::Impl {
                                     D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
             p.vsr = false;
         }
-        const UINT hdrInW = p.vsr ? p.outW : inW, hdrInH = p.vsr ? p.outH : inH;
+        const UINT hdrInW = p.vsr ? p.outW : p.nis ? nis->outWidth() : inW;
+        const UINT hdrInH = p.vsr ? p.outH : p.nis ? nis->outHeight() : inH;
         if (p.hdr && !ensureTexture(hdrOut, hdrW, hdrH, hdrInW, hdrInH, kHdrFormat,
                                     D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
             p.hdr = false;
         }
-        p.enhanced = p.neural || p.vsr || p.hdr;
+        p.enhanced = p.neural || p.vsr || p.nis || p.hdr || p.interp || p.denoise || p.postfx || (settings.compare && srcRgb);
 
-        rebuildSwapchain(width, height, p.hdr ? kHdrFormat : kSdrFormat);
+        // HDR source on an HDR display, with no SDR-only stage in the way: show it as HDR.
+        p.passthrough = p.transfer && hdrDisplay && settings.hdrPassthrough && !p.enhanced;
+        if (p.transfer) status.flags |= EnhanceStatus::HdrSource;
+        if (p.passthrough) status.flags |= EnhanceStatus::HdrPassthrough;
+        rebuildSwapchain(width, height, (p.hdr || p.passthrough) ? kHdrFormat : kSdrFormat);
         if (p.neural) status.flags |= EnhanceStatus::NeuralActive;
         if (p.vsr) status.flags |= EnhanceStatus::VsrActive;
         if (p.hdr) status.flags |= EnhanceStatus::HdrActive;
-        status.outputWidth = p.enhanced ? (p.vsr ? p.outW : inW) : p.outW;
-        status.outputHeight = p.enhanced ? (p.vsr ? p.outH : inH) : p.outH;
+        if (p.interp) status.flags |= EnhanceStatus::InterpolationActive;
+        if (p.nis) status.flags |= EnhanceStatus::NisActive;
+        status.outputWidth = p.enhanced ? (p.vsr ? p.outW : p.nis ? nis->outWidth() : inW) : p.outW;
+        status.outputHeight = p.enhanced ? (p.vsr ? p.outH : p.nis ? nis->outHeight() : inH) : p.outH;
         return p;
     }
 
@@ -607,7 +844,7 @@ struct D3D12Presenter::Impl {
     }
 
     void stamp(UINT bb, UINT index) {
-        if (queryHeap) list->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, bb * kStamps + index);
+        if (queryHeap) cmd->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, bb * kStamps + index);
     }
 
     // Reads the timestamps of the frame that last used this slot (its fence has completed).
@@ -619,16 +856,23 @@ struct D3D12Presenter::Impl {
         if (FAILED(queryReadback->Map(0, &range, reinterpret_cast<void**>(&data)))) return;
         const UINT64* t = data + bb * kStamps;
         const auto ms = [&](UINT a, UINT b) { return t[b] > t[a] ? static_cast<double>(t[b] - t[a]) * tickMs : 0.0; };
-        const double convert = ms(0, 1), neuralMs = ms(1, 2), vsrMs = ms(2, 3), hdrMs = ms(3, 4), total = ms(0, 5);
+        const double convert = ms(0, 1), prepare = ms(1, 2), neuralMs = ms(2, 3), composite = ms(3, 4),
+                     interpMs = ms(4, 5), vsrMs = ms(5, 6), hdrMs = ms(6, 7), presentMs = ms(7, 8), total = ms(0, 8);
         const D3D12_RANGE none{0, 0};
         queryReadback->Unmap(0, &none);
         smooth(status.gpuConvertMs, convert);
+        smooth(status.gpuNrPrepareMs, prepare);
         smooth(status.gpuNeuralMs, neuralMs);
+        smooth(status.gpuNrCompositeMs, composite);
         smooth(status.gpuVsrMs, vsrMs);
         smooth(status.gpuHdrMs, hdrMs);
+        smooth(status.gpuPresentMs, presentMs);
+        if (interpMs > 0) smooth(status.gpuInterpMs, interpMs);
         smooth(status.gpuTotalMs, total);
         if (gpuStage) gpuStage->record(total * 1000.0);
         if (convertStage) convertStage->record(convert * 1000.0);
+        if (nrStage && neuralMs > 0) nrStage->record((prepare + neuralMs) * 1000.0);
+        if (nrCompositeStage && composite > 0) nrCompositeStage->record(composite * 1000.0);
         if (vsrStage && vsrMs > 0) vsrStage->record(vsrMs * 1000.0);
         if (hdrStage && hdrMs > 0) hdrStage->record(hdrMs * 1000.0);
     }
@@ -663,7 +907,7 @@ struct D3D12Presenter::Impl {
             p.matrix = yuvToRgb(matrixFor(frame), frame.color_range == AVCOL_RANGE_JPEG);
             p.mode = 0;
         } else {
-            uploadSoftware(frame, list.Get());
+            uploadSoftware(frame, cmd);
             D3D12_SHADER_RESOURCE_VIEW_DESC rgb = nullDesc;
             rgb.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
             bindRgb(cpu, rgbTex.Get(), rgb.Format);
@@ -688,20 +932,23 @@ struct D3D12Presenter::Impl {
     void drawPass(ID3D12PipelineState* pso, D3D12_CPU_DESCRIPTOR_HANDLE rtv, const D3D12_VIEWPORT& viewport,
                   const D3D12_RECT& scissor, const Params& p, D3D12_GPU_DESCRIPTOR_HANDLE srvGpu) {
         ID3D12DescriptorHeap* heaps[] = {srvHeap.Get()};
-        list->SetPipelineState(pso);
-        list->SetDescriptorHeaps(1, heaps);
-        list->SetGraphicsRootSignature(rootSig.Get());
-        list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-        list->RSSetViewports(1, &viewport);
-        list->RSSetScissorRects(1, &scissor);
-        list->SetGraphicsRoot32BitConstants(0, sizeof(Params) / 4, &p, 0);
-        list->SetGraphicsRootDescriptorTable(1, srvGpu);
-        list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        list->DrawInstanced(3, 1, 0, 0);
+        cmd->SetPipelineState(pso);
+        cmd->SetDescriptorHeaps(1, heaps);
+        cmd->SetGraphicsRootSignature(rootSig.Get());
+        cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        cmd->RSSetViewports(1, &viewport);
+        cmd->RSSetScissorRects(1, &scissor);
+        cmd->SetGraphicsRoot32BitConstants(0, sizeof(Params) / 4, &p, 0);
+        cmd->SetGraphicsRootDescriptorTable(1, srvGpu);
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd->DrawInstanced(3, 1, 0, 0);
     }
 
-    bool draw(const AVFrame& frame) {
+    // interpT < 0: show `frame`. 0 < interpT < 1: show a frame generated between the last real
+    // frame and `frame` (which is staged, not shown).
+    bool draw(const AVFrame& frame, float interpT = -1.0f) {
         const Plan plan = this->plan(frame);
+        if (interpT >= 0 && (!plan.interp || !curSlotValid)) return false;
 
         WaitForSingleObjectEx(frameLatency, 100, TRUE);
         const UINT bb = swapChain->GetCurrentBackBufferIndex();
@@ -714,15 +961,22 @@ struct D3D12Presenter::Impl {
 
         allocators[bb]->Reset();
         list->Reset(allocators[bb].Get(), nullptr);
+        cmd = list.Get();
         stamp(bb, 0);
 
         const auto srvCpuBase = srvHeap->GetCPUDescriptorHandleForHeapStart().ptr + static_cast<SIZE_T>(bb) * kSrvPerFrame * srvSize;
         const auto srvGpuBase = srvHeap->GetGPUDescriptorHandleForHeapStart().ptr + static_cast<UINT64>(bb) * kSrvPerFrame * srvSize;
-        const D3D12_CPU_DESCRIPTOR_HANDLE passACpu{srvCpuBase}, finalCpu{srvCpuBase + kSrvPerPass * srvSize};
-        const D3D12_GPU_DESCRIPTOR_HANDLE passAGpu{srvGpuBase}, finalGpu{srvGpuBase + kSrvPerPass * srvSize};
+        const D3D12_CPU_DESCRIPTOR_HANDLE passACpu{srvCpuBase}, finalCpu{srvCpuBase + kSrvPerPass * srvSize},
+            compareCpu{srvCpuBase + 2 * kSrvPerPass * srvSize};
+        const D3D12_GPU_DESCRIPTOR_HANDLE passAGpu{srvGpuBase}, finalGpu{srvGpuBase + kSrvPerPass * srvSize},
+            compareGpu{srvGpuBase + 2 * kSrvPerPass * srvSize};
 
         Params p{};
         bindSource(frame, passACpu, p);
+        p.transfer = plan.transfer;
+        p.hdrOut = plan.passthrough ? 1u : 0u;
+        p.sdrWhite = 203.0f;
+        p.contentPeak = plan.contentPeak;
 
         // Final-pass source: either the decoded frame directly, or the end of the enhancement chain.
         bool hdrOk = plan.hdr;
@@ -730,64 +984,124 @@ struct D3D12Presenter::Impl {
         Params finalParams = p;
         D3D12_GPU_DESCRIPTOR_HANDLE finalSrv = passAGpu;
 
-        bool neuralOk = false;
+        bool neuralOk = false, interpOut = false;
         if (plan.enhanced) {
+          ID3D12Resource* current = srcRgb.Get();
+          // A frame staged for interpolation was already converted and enhanced.
+          const bool staged = plan.interp && stagedValid && frame.pts == stagedPts;
+          if (staged) {
+            current = interp->slot(1 - curSlot);
+            for (UINT i = 1; i <= 4; ++i) stamp(bb, i);
+          } else {
             // Pass A: decode surface -> RGBA8 at source size.
             const auto toRt = transition(srcRgb.Get(), kShaderRead, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            list->ResourceBarrier(1, &toRt);
+            cmd->ResourceBarrier(1, &toRt);
             const D3D12_CPU_DESCRIPTOR_HANDLE rtv{rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + kBackBuffers * rtvSize};
             const D3D12_VIEWPORT vpA{0, 0, static_cast<float>(srcW), static_cast<float>(srcH), 0, 1};
             const D3D12_RECT scA{0, 0, static_cast<LONG>(srcW), static_cast<LONG>(srcH)};
             drawPass(psoFor(kRgbaFormat), rtv, vpA, scA, p, passAGpu);
             const auto toRead = transition(srcRgb.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, kShaderRead);
-            list->ResourceBarrier(1, &toRead);
+            cmd->ResourceBarrier(1, &toRead);
+            // Denoise (its cost is reported with the conversion).
+            if (plan.denoise) {
+                denoiser->run(cmd, srcRgb.Get(), 1.0f, 1.0f, static_cast<float>(settings.denoise));
+                current = denoiser->output();
+            }
             stamp(bb, 1);
-
-            ID3D12Resource* current = srcRgb.Get();
-            DXGI_FORMAT currentFormat = kRgbaFormat;
-            UINT curW = srcW, curH = srcH;
+            ID3D12Resource* const nrBase = current;
 
             if (plan.neural) {
+                // NR input (downsampled when NR runs below source size), then submit: the NR
+                // evaluation must start a command list of its own.
+                neural->prepare(cmd, nrBase);
+                stamp(bb, 2);
+                cmd->Close();
+                ID3D12CommandList* first[] = {cmd};
+                queue->ExecuteCommandLists(1, first);
+                nrAllocators[bb]->Reset();
+                nrList->Reset(nrAllocators[bb].Get(), nullptr);
+                cmd = nrList.Get();
+
                 // History is meaningless across a seek, a cut in the timeline or a new size.
                 const bool jump = frame.pts == AV_NOPTS_VALUE || lastPts == AV_NOPTS_VALUE || frame.pts <= lastPts;
-                if (neural->evaluate(list.Get(), srcRgb.Get(), neuralOut.Get(), srcW, srcH, settings.neuralControls, jump)) {
-                    D3D12_RESOURCE_BARRIER b[2] = {uavBarrier(neuralOut.Get()),
-                                                   transition(neuralOut.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kShaderRead)};
-                    list->ResourceBarrier(2, b);
-                    current = neuralOut.Get();
+                const auto now = std::chrono::steady_clock::now();
+                const double stepMs = lastNrEval.time_since_epoch().count()
+                                          ? std::chrono::duration<double, std::milli>(now - lastNrEval).count()
+                                          : 0.0;
+                lastNrEval = now;
+                if (neural->evaluate(cmd, settings.neuralControls, jump, stepMs)) {
+                    stamp(bb, 3);
+                    neural->composite(cmd, nrBase, settings.neuralControls);
+                    current = neural->output();
                     neuralOk = true;
                 } else {
                     neuralUnavailable = true;
+                    neuralNote = "DLSS NR falló al procesar el fotograma; se desactivó para este video.";
                     status.flags &= ~EnhanceStatus::NeuralActive;
                     status.flags |= EnhanceStatus::NeuralUnavailable;
+                    status.neuralNote = neuralNote;
+                    stamp(bb, 3);
                 }
+            } else {
+                stamp(bb, 2);
+                stamp(bb, 3);
             }
             lastPts = frame.pts;
-            stamp(bb, 2);
+            if (plan.postfx) {
+                postfx->run(cmd, current, settings.color);
+                current = postfx->output();
+            }
+            stamp(bb, 4);
+            if (plan.interp) interp->ingest(cmd, 1 - curSlot, current);
+          }
+          DXGI_FORMAT currentFormat = kRgbaFormat;
+          UINT curW = srcW, curH = srcH;
+
+          // Frame interpolation (generated frame), or bookkeeping for a real one.
+          if (plan.interp) {
+              if (interpT >= 0) {
+                  interp->interpolate(cmd, curSlot, 1 - curSlot, interpT);
+                  current = interp->output();
+                  interpOut = true;
+                  stagedValid = true;
+                  stagedPts = frame.pts;
+                  ++status.interpolatedFrames;
+              } else {
+                  curSlot = 1 - curSlot;
+                  curSlotValid = true;
+                  stagedValid = false;
+              }
+          }
+          stamp(bb, 5);
 
             if (plan.vsr) {
-                if (vsr->evaluate(list.Get(), current, srcW, srcH, vsrOut.Get(), vsrW, vsrH, settings.vsrQuality)) {
+                if (vsr->evaluate(cmd, current, srcW, srcH, vsrOut.Get(), vsrW, vsrH, settings.vsrQuality)) {
                     D3D12_RESOURCE_BARRIER b[2] = {uavBarrier(vsrOut.Get()),
                                                    transition(vsrOut.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kShaderRead)};
-                    list->ResourceBarrier(2, b);
+                    cmd->ResourceBarrier(2, b);
                     current = vsrOut.Get();
                     curW = vsrW;
                     curH = vsrH;
                 } else {
-                    vsrUnavailable = true; // fall back to bilinear from the next frame on
+                    vsrUnavailable = true; // NIS takes over from the next frame on
                     status.flags &= ~EnhanceStatus::VsrActive;
                     status.flags |= EnhanceStatus::VsrUnavailable;
                 }
+            } else if (plan.nis) {
+                nis->run(cmd, current, settings.sharpness);
+                current = nis->output();
+                curW = nis->outWidth();
+                curH = nis->outHeight();
             }
-            stamp(bb, 3);
+            stamp(bb, 6);
 
             if (plan.hdr) {
                 const auto params = hdrParams();
                 if (curW == hdrW && curH == hdrH &&
-                    trueHdr->evaluate(list.Get(), current, hdrOut.Get(), hdrW, hdrH, params)) {
+                    trueHdr->evaluate(cmd, current, hdrOut.Get(), hdrW, hdrH, params)) {
                     D3D12_RESOURCE_BARRIER b[2] = {uavBarrier(hdrOut.Get()),
                                                    transition(hdrOut.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kShaderRead)};
-                    list->ResourceBarrier(2, b);
+                    cmd->ResourceBarrier(2, b);
                     current = hdrOut.Get();
                     currentFormat = kHdrFormat;
                 } else {
@@ -797,7 +1111,7 @@ struct D3D12Presenter::Impl {
                     status.flags |= EnhanceStatus::HdrUnavailable;
                 }
             }
-            stamp(bb, 4);
+            stamp(bb, 7);
 
             bindRgb(finalCpu, current, currentFormat);
             finalSrv = finalGpu;
@@ -805,7 +1119,7 @@ struct D3D12Presenter::Impl {
             finalParams.uvScale[0] = finalParams.uvScale[1] = 1.0f;
             // The swapchain is FP16 linear whenever HDR was planned; an SDR image needs linearising.
             finalParams.mode = (plan.hdr && !hdrOk) ? 2 : 1;
-            if (current == vsrOut.Get() || current == hdrOut.Get()) {
+            if (current == vsrOut.Get() || current == hdrOut.Get() || (nis && current == nis->output())) {
                 // Already at on-screen size when VSR ran: draw it 1:1 on whole pixels.
                 if (curW == plan.outW && curH == plan.outH) {
                     finalViewport.TopLeftX = std::floor(plan.vp.x);
@@ -815,18 +1129,64 @@ struct D3D12Presenter::Impl {
                 }
             }
         } else {
-            for (UINT i = 1; i <= 4; ++i) stamp(bb, i);
+            for (UINT i = 1; i <= 7; ++i) stamp(bb, i);
         }
 
         // Final pass into the back buffer.
         const auto toRt = transition(backBuffers[bb].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        list->ResourceBarrier(1, &toRt);
+        cmd->ResourceBarrier(1, &toRt);
         const D3D12_CPU_DESCRIPTOR_HANDLE rtv{rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + bb * rtvSize};
         const float black[4] = {0, 0, 0, 1};
-        list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-        list->ClearRenderTargetView(rtv, black, 0, nullptr);
+        cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        cmd->ClearRenderTargetView(rtv, black, 0, nullptr);
         const D3D12_RECT scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
         drawPass(psoFor(bbFormat), rtv, finalViewport, scissor, finalParams, finalSrv);
+
+        // A/B: the original picture over the left half of the video area (not on generated frames).
+        if (settings.compare && plan.enhanced && interpT < 0 && srcRgb) {
+            bindRgb(compareCpu, srcRgb.Get(), kRgbaFormat);
+            Params cp{};
+            cp.uvScale[0] = cp.uvScale[1] = 1.0f;
+            cp.mode = bbFormat == kHdrFormat ? 2 : 1;
+            const D3D12_VIEWPORT vp{plan.vp.x, plan.vp.y, plan.vp.width, plan.vp.height, 0, 1};
+            const LONG mid = static_cast<LONG>(plan.vp.x + plan.vp.width / 2);
+            const D3D12_RECT left{static_cast<LONG>(plan.vp.x), 0, mid - 1, static_cast<LONG>(height)};
+            drawPass(psoFor(bbFormat), rtv, vp, left, cp, compareGpu);
+        }
+
+        // Screenshot: copy what is on screen (video area only) for the requester.
+        const bool shot = !screenshotPath.empty() && !screenshotDone;
+        D3D12_BOX shotBox{};
+        UINT64 shotPitch = 0;
+        if (shot) {
+            shotBox = {static_cast<UINT>(std::max(0.0f, std::floor(plan.vp.x))), static_cast<UINT>(std::max(0.0f, std::floor(plan.vp.y))), 0,
+                       std::min<UINT>(width, static_cast<UINT>(std::ceil(plan.vp.x + plan.vp.width))),
+                       std::min<UINT>(height, static_cast<UINT>(std::ceil(plan.vp.y + plan.vp.height))), 1};
+            const UINT bytes = bbFormat == kHdrFormat ? 8 : 4;
+            shotPitch = ((shotBox.right - shotBox.left) * bytes + 255) & ~255ull;
+            const UINT64 need = shotPitch * (shotBox.bottom - shotBox.top);
+            if (!shotReadback || shotReadback->GetDesc().Width < need) {
+                D3D12_HEAP_PROPERTIES rb{D3D12_HEAP_TYPE_READBACK};
+                D3D12_RESOURCE_DESC bd{D3D12_RESOURCE_DIMENSION_BUFFER, 0, need, 1, 1, 1, DXGI_FORMAT_UNKNOWN, {1, 0},
+                                       D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_RESOURCE_FLAG_NONE};
+                shotReadback.Reset();
+                device->CreateCommittedResource(&rb, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                IID_PPV_ARGS(&shotReadback));
+            }
+            if (shotReadback && shotBox.right > shotBox.left && shotBox.bottom > shotBox.top) {
+                const auto toCopy = transition(backBuffers[bb].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                cmd->ResourceBarrier(1, &toCopy);
+                D3D12_TEXTURE_COPY_LOCATION dst{shotReadback.Get(), D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT};
+                dst.PlacedFootprint.Offset = 0;
+                dst.PlacedFootprint.Footprint = {bbFormat, shotBox.right - shotBox.left, shotBox.bottom - shotBox.top, 1,
+                                                 static_cast<UINT>(shotPitch)};
+                D3D12_TEXTURE_COPY_LOCATION src{backBuffers[bb].Get(), D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
+                src.SubresourceIndex = 0;
+                cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, &shotBox);
+                const auto back = transition(backBuffers[bb].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+                cmd->ResourceBarrier(1, &back);
+            }
+        }
 
         std::vector<D3D12_RESOURCE_BARRIER> after;
         after.push_back(transition(backBuffers[bb].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
@@ -834,18 +1194,23 @@ struct D3D12Presenter::Impl {
             after.push_back(transition(vsrOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
         if (plan.hdr && hdrOk)
             after.push_back(transition(hdrOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        if (neuralOk) after.push_back(transition(neuralOut.Get(), kShaderRead, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        list->ResourceBarrier(static_cast<UINT>(after.size()), after.data());
-        stamp(bb, 5);
+        cmd->ResourceBarrier(static_cast<UINT>(after.size()), after.data());
+        if (neuralOk) neural->finish(cmd);
+        if (interpOut) interp->finish(cmd);
+        if (plan.denoise && denoiser) denoiser->finish(cmd);
+        if (plan.nis && nis) nis->finish(cmd);
+        if (plan.postfx && postfx) postfx->finish(cmd);
+        stamp(bb, 8);
         if (queryHeap) {
-            list->ResolveQueryData(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, bb * kStamps, kStamps, queryReadback.Get(),
-                                   bb * kStamps * sizeof(UINT64));
+            cmd->ResolveQueryData(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, bb * kStamps, kStamps, queryReadback.Get(),
+                                  bb * kStamps * sizeof(UINT64));
             timed[bb] = true;
         }
-        list->Close();
+        cmd->Close();
 
-        ID3D12CommandList* lists[] = {list.Get()};
+        ID3D12CommandList* lists[] = {cmd};
         queue->ExecuteCommandLists(1, lists);
+        cmd = nullptr;
         const HRESULT hr = swapChain->Present(0, tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
         frameFence[bb] = ++fenceValue;
         queue->Signal(fence.Get(), frameFence[bb]);
@@ -856,11 +1221,59 @@ struct D3D12Presenter::Impl {
             av_frame_free(&last);
             last = av_frame_clone(&frame);
         }
+        if (shot) {
+            waitIdle();
+            screenshotOk = shotReadback && writeScreenshot(shotBox.right - shotBox.left, shotBox.bottom - shotBox.top,
+                                                           static_cast<UINT>(shotPitch));
+            screenshotDone = true;
+        }
         if (FAILED(hr)) {
             log::error("presenter: Present failed 0x{:08X}", static_cast<uint32_t>(hr));
             return false;
         }
         return true;
+    }
+
+    // Readback -> 8-bit BGRA -> PNG through WIC. An HDR (scRGB FP16) frame is brought to SDR
+    // with a simple highlight roll-off so the file still looks right on any viewer.
+    bool writeScreenshot(UINT w, UINT h, UINT pitch) {
+        uint8_t* data = nullptr;
+        const D3D12_RANGE range{0, static_cast<SIZE_T>(pitch) * h};
+        if (FAILED(shotReadback->Map(0, &range, reinterpret_cast<void**>(&data)))) return false;
+        std::vector<uint8_t> bgra(static_cast<size_t>(w) * h * 4);
+        if (bbFormat == kHdrFormat) {
+            const auto half = [](uint16_t v) {
+                const uint32_t sign = (v >> 15) & 1, exp = (v >> 10) & 31, mant = v & 1023;
+                float f = exp == 0 ? std::ldexp(static_cast<float>(mant), -24)
+                          : exp == 31 ? 65504.0f
+                                      : std::ldexp(static_cast<float>(mant | 1024), static_cast<int>(exp) - 25);
+                return sign ? -f : f;
+            };
+            const auto encode = [](float linear) {
+                linear = linear / (1.0f + std::max(0.0f, linear - 1.0f) * 0.25f); // gentle roll-off above SDR white
+                linear = std::clamp(linear, 0.0f, 1.0f);
+                const float s = linear <= 0.0031308f ? 12.92f * linear : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+                return static_cast<uint8_t>(std::lround(s * 255.0f));
+            };
+            for (UINT y = 0; y < h; ++y) {
+                const auto* row = reinterpret_cast<const uint16_t*>(data + static_cast<size_t>(y) * pitch);
+                for (UINT x = 0; x < w; ++x) {
+                    auto* o = &bgra[(static_cast<size_t>(y) * w + x) * 4];
+                    o[0] = encode(half(row[x * 4 + 2]));
+                    o[1] = encode(half(row[x * 4 + 1]));
+                    o[2] = encode(half(row[x * 4 + 0]));
+                    o[3] = 255;
+                }
+            }
+        } else {
+            for (UINT y = 0; y < h; ++y) {
+                std::memcpy(&bgra[static_cast<size_t>(y) * w * 4], data + static_cast<size_t>(y) * pitch, static_cast<size_t>(w) * 4);
+                for (UINT x = 0; x < w; ++x) bgra[(static_cast<size_t>(y) * w + x) * 4 + 3] = 255;
+            }
+        }
+        const D3D12_RANGE none{0, 0};
+        shotReadback->Unmap(0, &none);
+        return savePng(screenshotPath, w, h, bgra.data());
     }
 
     ngx::TrueHdrParams hdrParams() const {
@@ -871,15 +1284,18 @@ struct D3D12Presenter::Impl {
 };
 
 std::unique_ptr<D3D12Presenter> D3D12Presenter::create(gpu::D3D12Context& gpu, ngx::NgxRuntime* ngx,
-                                                       telemetry::Telemetry* telemetry) {
+                                                       telemetry::Telemetry* telemetry, enhance::NrLocator nrLocator) {
     auto impl = std::make_unique<Impl>();
     impl->gpu = &gpu;
     impl->device = gpu.device();
     impl->queue = gpu.directQueue();
     impl->ngx = ngx && ngx->initialized() ? ngx : nullptr;
+    impl->nrLocator = std::move(nrLocator);
     if (telemetry) {
         impl->gpuStage = &telemetry->stage("gpu.frame");
         impl->convertStage = &telemetry->stage("gpu.convert");
+        impl->nrStage = &telemetry->stage("gpu.nr");
+        impl->nrCompositeStage = &telemetry->stage("gpu.nr.composite");
         impl->vsrStage = &telemetry->stage("gpu.vsr");
         impl->hdrStage = &telemetry->stage("gpu.truehdr");
     }
@@ -889,6 +1305,42 @@ std::unique_ptr<D3D12Presenter> D3D12Presenter::create(gpu::D3D12Context& gpu, n
 
 D3D12Presenter::D3D12Presenter(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 D3D12Presenter::~D3D12Presenter() = default;
+
+unsigned D3D12Presenter::interpolationFactor() const {
+    std::lock_guard lock(impl_->mutex);
+    return std::clamp<unsigned>(impl_->settings.interpolation, 1, 4);
+}
+
+bool D3D12Presenter::presentInterpolated(const AVFrame& next, float t) {
+    std::lock_guard lock(impl_->mutex);
+    if (t <= 0.0f || t >= 1.0f) return false;
+    return impl_->draw(next, t);
+}
+
+bool D3D12Presenter::screenshot(const std::string& path) {
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (!impl_->last) return false;
+        impl_->screenshotPath = path;
+        impl_->screenshotDone = false;
+        impl_->screenshotOk = false;
+    }
+    // Paused or idle: draw the last frame now. Playing: the next frame serves it.
+    for (int i = 0; i < 200; ++i) {
+        {
+            std::lock_guard lock(impl_->mutex);
+            if (impl_->screenshotDone) {
+                impl_->screenshotPath.clear();
+                return impl_->screenshotOk;
+            }
+        }
+        if (i == 10) redraw();
+        Sleep(5);
+    }
+    std::lock_guard lock(impl_->mutex);
+    impl_->screenshotPath.clear();
+    return impl_->screenshotOk;
+}
 
 bool D3D12Presenter::present(const AVFrame& frame) {
     std::lock_guard lock(impl_->mutex);
@@ -925,7 +1377,14 @@ void D3D12Presenter::setEnhance(const EnhanceSettings& settings) {
         if (impl_->settings == settings) return;
         // A fresh request gets a fresh attempt (e.g. after a driver update or turning HDR on).
         if (settings.vsr != impl_->settings.vsr) impl_->vsrUnavailable = false;
-        if (settings.neural != impl_->settings.neural) impl_->neuralUnavailable = false;
+        impl_->settings.interpolation = std::clamp<uint32_t>(settings.interpolation, 1, 4);
+        impl_->settings.denoise = std::min<uint32_t>(settings.denoise, 3);
+        impl_->settings.sharpness = std::clamp(settings.sharpness, 0.0f, 1.0f);
+        // Turning NR on again, or choosing another runtime / model / size, gets a fresh attempt.
+        if (settings.neural != impl_->settings.neural ||
+            !settings.neuralControls.sameFeature(impl_->settings.neuralControls)) {
+            impl_->neuralUnavailable = false;
+        }
         if (settings.trueHdr != impl_->settings.trueHdr) {
             impl_->hdrUnavailable = false;
             impl_->hdrDisplay = displayHdrInfo(&impl_->hdrPeak);
@@ -933,7 +1392,11 @@ void D3D12Presenter::setEnhance(const EnhanceSettings& settings) {
         impl_->settings = settings;
         impl_->settings.vsrQuality = std::clamp<uint32_t>(settings.vsrQuality, 1, 4);
         if (!settings.vsr) impl_->status.gpuVsrMs = 0;
-        if (!settings.neural) impl_->status.gpuNeuralMs = 0;
+        if (!settings.neural) {
+            impl_->status.gpuNeuralMs = 0;
+            impl_->status.gpuNrPrepareMs = 0;
+            impl_->status.gpuNrCompositeMs = 0;
+        }
         if (!settings.trueHdr) impl_->status.gpuHdrMs = 0;
     }
     redraw();

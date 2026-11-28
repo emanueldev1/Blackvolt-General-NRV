@@ -38,8 +38,8 @@ bv_result BV_CALL bv_player_create(bv_engine* engine, bv_player** out_player) {
 #if defined(_WIN32)
     try {
         auto p = std::make_unique<bv_player>();
-        p->presenter = bv::render::D3D12Presenter::create(engine->engine.gpu(), engine->engine.ngx(),
-                                                               &engine->engine.telemetry());
+        p->presenter = bv::render::D3D12Presenter::create(
+            engine->engine.gpu(), engine->engine.ngx(), &engine->engine.telemetry(), engine->engine.nrLocator());
         if (!p->presenter) return BV_ERR_INTERNAL;
         p->player = std::make_unique<bv::player::Player>(engine->engine.gpu().device(), *p->presenter,
                                                          [] { return bv::audio::createWasapiSink(); },
@@ -114,6 +114,46 @@ bv_result BV_CALL bv_player_set_volume(bv_player* player, float volume) {
     return BV_OK;
 }
 
+bv_result BV_CALL bv_player_tracks(bv_player* player, bv_track* out, uint32_t capacity, uint32_t* count) {
+    if (!player || !count) return BV_ERR_INVALID_ARGUMENT;
+    const auto s = player->player->snapshot();
+    *count = static_cast<uint32_t>(s.tracks.size());
+    for (uint32_t i = 0; out && i < capacity && i < s.tracks.size(); ++i) {
+        const auto& t = s.tracks[i];
+        bv_track& o = out[i];
+        o = bv_track{};
+        o.size = sizeof(o);
+        o.index = t.index;
+        o.kind = static_cast<uint32_t>(t.kind);
+        copyString(o.language, t.language);
+        copyString(o.title, t.title);
+        copyString(o.codec, t.codec);
+    }
+    return BV_OK;
+}
+
+bv_result BV_CALL bv_player_select_track(bv_player* player, uint32_t kind, int32_t index) {
+    if (!player || kind > 1) return BV_ERR_INVALID_ARGUMENT;
+    if (kind == 0) player->player->selectAudioTrack(index);
+    else player->player->selectSubtitleTrack(index);
+    return BV_OK;
+}
+
+bv_result BV_CALL bv_player_subtitle(bv_player* player, char* out, uint32_t size) {
+    if (!player || !out || size == 0) return BV_ERR_INVALID_ARGUMENT;
+    const auto text = player->player->subtitleNow();
+    const auto n = std::min<std::size_t>(text.size(), size - 1);
+    std::memcpy(out, text.data(), n);
+    out[n] = '\0';
+    return BV_OK;
+}
+
+bv_result BV_CALL bv_player_set_rate(bv_player* player, double rate) {
+    if (!player || !(rate > 0)) return BV_ERR_INVALID_ARGUMENT;
+    player->player->setRate(rate);
+    return BV_OK;
+}
+
 bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out) {
     if (!player || !out) return BV_ERR_INVALID_ARGUMENT;
     const auto s = player->player->snapshot();
@@ -129,6 +169,9 @@ bv_result BV_CALL bv_player_info_get(bv_player* player, bv_player_info* out) {
     i.has_audio = s.hasAudio ? 1u : 0u;
     i.frames_presented = s.framesPresented;
     i.frames_dropped = s.framesDropped;
+    i.frames_generated = s.framesGenerated;
+    i.audio_track = s.audioTrack;
+    i.subtitle_track = s.subtitleTrack;
     copyString(i.codec, s.codec);
     copyString(i.error, s.error);
     i.live = s.live ? 1u : 0u;
@@ -170,6 +213,19 @@ bv_result BV_CALL bv_player_set_enhance(bv_player* player, const bv_enhance_sett
 #if defined(_WIN32)
     player->presenter->setEnhance(bv::render::fromApi(*settings));
     return BV_OK;
+#else
+    return BV_ERR_UNSUPPORTED;
+#endif
+}
+
+bv_result BV_CALL bv_player_screenshot(bv_player* player, const char* png_path) {
+    if (!player || !png_path) return BV_ERR_INVALID_ARGUMENT;
+#if defined(_WIN32)
+    try {
+        return player->presenter->screenshot(png_path) ? BV_OK : BV_ERR_INTERNAL;
+    } catch (...) {
+        return BV_ERR_INTERNAL;
+    }
 #else
     return BV_ERR_UNSUPPORTED;
 #endif

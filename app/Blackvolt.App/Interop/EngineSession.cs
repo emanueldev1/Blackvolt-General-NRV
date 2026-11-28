@@ -49,6 +49,25 @@ internal sealed class EngineSession : IDisposable
         return status;
     }
 
+    /// <summary>Most recent samples of a stage (microseconds), oldest first, into <paramref name="buffer"/>.</summary>
+    public unsafe int GetHistory(string stage, float[] buffer)
+    {
+        ObjectDisposedException.ThrowIf(_handle == 0, this);
+        fixed (float* p = buffer)
+        {
+            NativeEngine.GetStageHistory(_handle, stage, p, (uint)buffer.Length, out uint count).ThrowIfFailed();
+            return (int)count;
+        }
+    }
+
+    public NativeEngine.GpuMemory GetGpuMemory()
+    {
+        ObjectDisposedException.ThrowIf(_handle == 0, this);
+        var m = new NativeEngine.GpuMemory { Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeEngine.GpuMemory>() };
+        NativeEngine.GetGpuMemory(_handle, ref m).ThrowIfFailed();
+        return m;
+    }
+
     internal nint Handle => _handle;
 
     public void Dispose()

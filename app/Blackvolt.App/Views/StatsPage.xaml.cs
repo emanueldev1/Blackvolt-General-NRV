@@ -16,11 +16,21 @@ public sealed partial class StatsPage : Page
     [
         ("frame", "Fotograma total"),
         ("decode", "Decodificación"),
-        ("enhance", "Mejora (GPU)"),
         ("present", "Presentación"),
+        ("stream.latency", "Latencia Remote Play"),
+        ("stream.decode", "Decodificación stream"),
+        ("gpu.frame", "GPU por fotograma"),
+        ("gpu.convert", "GPU · conversión"),
+        ("gpu.nr", "GPU · DLSS NR"),
+        ("gpu.nr.composite", "GPU · NR composición"),
+        ("gpu.vsr", "GPU · RTX VSR"),
+        ("gpu.truehdr", "GPU · TrueHDR"),
     ];
 
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly float[] _frames = new float[480];
+    private readonly float[] _gpu = new float[480];
+
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
     public StatsPage()
     {
@@ -93,6 +103,61 @@ public sealed partial class StatsPage : Page
         }
         StageList.ItemsSource = rows;
         EmptyHint.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshLive(engine);
+    }
+
+    private void RefreshLive(Interop.EngineSession engine)
+    {
+        int n = 0, ng = 0;
+        try
+        {
+            n = engine.GetHistory("frame", _frames);
+            if (n == 0) n = engine.GetHistory("stream.latency", _frames);
+            ng = engine.GetHistory("gpu.frame", _gpu);
+            var mem = engine.GetGpuMemory();
+            if (mem.BudgetBytes > 0)
+            {
+                LiveVram.Text = $"{mem.UsageBytes / 1048576.0:0} MB";
+                VramBar.Value = Math.Min(1, (double)mem.UsageBytes / mem.BudgetBytes);
+                ToolTipService.SetToolTip(VramBar, $"Presupuesto {mem.BudgetBytes / 1048576.0:0} MB · tarjeta {mem.DedicatedBytes / 1048576.0:0} MB");
+            }
+        }
+        catch (Interop.EngineException)
+        {
+            return;
+        }
+
+        if (n > 1)
+        {
+            var sorted = _frames.Take(n).OrderBy(x => x).ToArray();
+            var avg = sorted.Average();
+            var p99 = sorted[Math.Min(n - 1, (int)Math.Ceiling(n * 0.99) - 1)];
+            LiveFps.Text = avg > 0 ? $"{1_000_000 / avg:0} · {1_000_000 / Math.Max(1, p99):0}" : "–";
+        }
+        else
+        {
+            LiveFps.Text = "–";
+        }
+
+        var width = Math.Max(10, GraphHost.ActualWidth);
+        var height = GraphHost.ActualHeight > 0 ? GraphHost.ActualHeight : 140;
+        double max = 4;
+        for (int i = 0; i < n; i++) max = Math.Max(max, _frames[i] / 1000.0);
+        for (int i = 0; i < ng; i++) max = Math.Max(max, _gpu[i] / 1000.0);
+        max = Math.Ceiling(max / 4) * 4;
+        GraphScale.Text = $"0 – {max:0} ms";
+        Plot(FrameLine, _frames, n, max, width, height);
+        Plot(GpuLine, _gpu, ng, max, width, height);
+    }
+
+    private static void Plot(Microsoft.UI.Xaml.Shapes.Polyline line, float[] data, int n, double maxMs, double width, double height)
+    {
+        var points = new Microsoft.UI.Xaml.Media.PointCollection();
+        var step = width / (data.Length - 1);
+        var x0 = width - (n - 1) * step;
+        for (int i = 0; i < n; i++)
+            points.Add(new Windows.Foundation.Point(x0 + i * step, height - Math.Min(1, data[i] / 1000.0 / maxMs) * height));
+        line.Points = points;
     }
 
     private static string Ms(double microseconds) => $"{microseconds / 1000.0:0.00} ms";

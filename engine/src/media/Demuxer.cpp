@@ -1,4 +1,5 @@
 #include "Demuxer.h"
+#include "SubtitleDecoder.h"
 
 #include "CaptureUrl.h"
 
@@ -13,7 +14,7 @@ extern "C" {
 
 namespace bv::media {
 
-std::optional<Demuxer> Demuxer::open(const std::string& urlUtf8, std::string* error) {
+std::optional<Demuxer> Demuxer::open(const std::string& urlUtf8, std::string* error, int preferredAudio) {
     auto fail = [&](const std::string& msg) -> std::optional<Demuxer> {
         if (error) *error = msg;
         return std::nullopt;
@@ -59,14 +60,40 @@ std::optional<Demuxer> Demuxer::open(const std::string& urlUtf8, std::string* er
     if (v < 0) return fail("el archivo no tiene video");
     d.video_ = {v, raw->streams[v]->time_base, raw->streams[v]->codecpar};
 
-    const int a = av_find_best_stream(raw, AVMEDIA_TYPE_AUDIO, -1, v, nullptr, 0);
+    int a = av_find_best_stream(raw, AVMEDIA_TYPE_AUDIO, -1, v, nullptr, 0);
+    if (preferredAudio >= 0 && preferredAudio < static_cast<int>(raw->nb_streams) &&
+        raw->streams[preferredAudio]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+        a = preferredAudio;
     if (a >= 0) d.audio_ = {a, raw->streams[a]->time_base, raw->streams[a]->codecpar};
 
-    // Drop packets of streams we never decode as early as possible.
+    // Choosable tracks: every audio stream, and text subtitles (bitmap ones cannot be shown as text).
     for (unsigned i = 0; i < raw->nb_streams; ++i) {
-        if (static_cast<int>(i) != v && static_cast<int>(i) != a) raw->streams[i]->discard = AVDISCARD_ALL;
+        const auto* s = raw->streams[i];
+        const auto type = s->codecpar->codec_type;
+        const bool text = type == AVMEDIA_TYPE_SUBTITLE && SubtitleDecoder::isText(s->codecpar->codec_id);
+        if (type != AVMEDIA_TYPE_AUDIO && !text) continue;
+        Track t;
+        t.index = static_cast<int>(i);
+        t.kind = type == AVMEDIA_TYPE_AUDIO ? 0 : 1;
+        if (const auto* e = av_dict_get(s->metadata, "language", nullptr, 0)) t.language = e->value;
+        if (const auto* e = av_dict_get(s->metadata, "title", nullptr, 0)) t.title = e->value;
+        if (const auto* desc = avcodec_descriptor_get(s->codecpar->codec_id)) t.codec = desc->name;
+        d.tracks_.push_back(std::move(t));
+    }
+
+    // Drop packets of streams we never decode as early as possible (text subtitles stay: they
+    // are tiny and selecting one must not need a reopen).
+    for (unsigned i = 0; i < raw->nb_streams; ++i) {
+        const bool sub = raw->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE &&
+                         SubtitleDecoder::isText(raw->streams[i]->codecpar->codec_id);
+        if (static_cast<int>(i) != v && static_cast<int>(i) != a && !sub) raw->streams[i]->discard = AVDISCARD_ALL;
     }
     return d;
+}
+
+StreamInfo Demuxer::stream(int index) const {
+    if (!fmt_ || index < 0 || index >= static_cast<int>(fmt_->nb_streams)) return {};
+    return {index, fmt_->streams[index]->time_base, fmt_->streams[index]->codecpar};
 }
 
 double Demuxer::durationSeconds() const {
