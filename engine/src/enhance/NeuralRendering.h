@@ -13,7 +13,7 @@ struct ID3D12Device;
 struct ID3D12GraphicsCommandList;
 struct ID3D12Resource;
 
-namespace bv::ngx { class NgxRuntime; }
+namespace bv::ngx { class NgxRuntime; class DlssNrSession; }
 
 namespace bv::enhance {
 
@@ -119,6 +119,9 @@ public:
     [[nodiscard]] bool downsampled() const;
     [[nodiscard]] ngx::NrVariant variant() const;
     [[nodiscard]] std::string label() const; // "SF 310.9.16.0 · modelo B"
+    // The loaded runtime. Holding it keeps nvngx_dlssnr.dll loaded and initialised, so a new
+    // feature (other size / model) or turning NR back on does not reload 270 MB.
+    [[nodiscard]] std::shared_ptr<ngx::DlssNrSession> session() const;
 
     struct Impl;
 

@@ -841,6 +841,7 @@ uint32_t NeuralRendering::nrWidth() const { return impl_->nrW; }
 uint32_t NeuralRendering::nrHeight() const { return impl_->nrH; }
 bool NeuralRendering::downsampled() const { return impl_->downsampled(); }
 ngx::NrVariant NeuralRendering::variant() const { return impl_->session->variant(); }
+std::shared_ptr<ngx::DlssNrSession> NeuralRendering::session() const { return impl_->session; }
 
 std::string NeuralRendering::label() const {
     const auto& s = *impl_->session;

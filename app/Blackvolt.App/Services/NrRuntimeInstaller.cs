@@ -7,6 +7,13 @@ using NrVariant = Blackvolt.App.Interop.NativeEngine.NrVariant;
 
 namespace Blackvolt.App.Services;
 
+/// <summary>An RTX Video runtime (VSR / TrueHDR) taken from Veyra's NVIDIA package, as Veyra ships it.</summary>
+internal sealed record VideoRuntime(NativeEngine.Feature Feature, string Member, string Sha256, long Size, string Label)
+{
+    public string Dll => Runtimes.DllName(Feature);
+    public bool Installed => File.Exists(Path.Combine(Runtimes.UserDir, Dll)) || File.Exists(Path.Combine(Runtimes.BundledDir, Dll));
+}
+
 /// <summary>One nvngx_dlssnr.dll build published on RankFTW/rhi-repo (where Veyra's come from).</summary>
 internal sealed record NrBuild(string Tag, NrVariant Slot, string Label, string Sha256, long Size, bool Default)
 {
@@ -38,7 +45,22 @@ internal static partial class NrRuntimeInstaller
             "f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc", 165840496, false),
     ];
 
+    /// <summary>
+    /// RTX Video SDK 1.1.0 runtimes, exactly the files Veyra 2.2 ships in runtime/experimental
+    /// (hashes from its release runtime lock).
+    /// </summary>
+    public static readonly VideoRuntime[] VideoRuntimes =
+    [
+        new(NativeEngine.Feature.RtxVideoSuperResolution, "runtime/experimental/nvngx_vsr.dll",
+            "c3d88eea5ff7a548edefa66414cf6e77464d0947277c904f324dd23abf58a1ed", 19140144, "RTX Video Super Resolution 1.6.0"),
+        new(NativeEngine.Feature.RtxTrueHdr, "runtime/experimental/nvngx_truehdr.dll",
+            "9a80575f247190c05fe80eac0c4baa1d0d4d932348f26808310b5ec4bf9eeb4b", 3955752, "RTX Video TrueHDR 1.1.0"),
+    ];
+
+    public static IReadOnlyList<VideoRuntime> MissingVideo() => VideoRuntimes.Where(r => !r.Installed).ToList();
+
     private const string VeyraRepo = "Likely7/Veyra-NRVideo";
+    private static string? _veyraPackageUrl;
 
     private static readonly HttpClient Http = CreateClient();
     private static CancellationTokenSource? _cts;
@@ -110,12 +132,13 @@ internal static partial class NrRuntimeInstaller
         var adapter = App.Engine?.Adapter;
         if (!nr.AutoInstall || adapter is null || adapter.Vendor != NativeEngine.Vendor.Nvidia ||
             !adapter.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase)) return;
-        if (Installed(NrVariant.Compat) || Installed(NrVariant.Original)) return;
+        var nrMissing = !Installed(NrVariant.Compat) && !Installed(NrVariant.Original);
+        if (!nrMissing && MissingVideo().Count == 0) return;
         var last = AppSettings.Current.Update.LastNrAttemptUtc;
-        if (DateTime.UtcNow - last < TimeSpan.FromHours(20)) return;
+        if (DateTime.UtcNow - last < TimeSpan.FromHours(20) && nrMissing) return;
         AppSettings.Current.Update.LastNrAttemptUtc = DateTime.UtcNow;
         AppSettings.Current.Save();
-        _ = InstallAsync([NrVariant.Compat]);
+        _ = InstallAsync(nrMissing ? [NrVariant.Compat] : []);
     }
 
     /// <summary>
@@ -131,7 +154,7 @@ internal static partial class NrRuntimeInstaller
         if (!Installed(NrVariant.Compat)) wanted.Add(NrVariant.Compat);
         if (adapter.Name.Contains("RTX 50", StringComparison.OrdinalIgnoreCase) && !Installed(NrVariant.Original))
             wanted.Add(NrVariant.Original);
-        if (wanted.Count == 0) return;
+        if (wanted.Count == 0 && MissingVideo().Count == 0) return;
         AppSettings.Current.Update.LastNrAttemptUtc = DateTime.UtcNow;
         AppSettings.Current.Save();
         _ = InstallAsync(wanted);
@@ -139,10 +162,14 @@ internal static partial class NrRuntimeInstaller
 
     public static void Cancel() => _cts?.Cancel();
 
-    /// <summary>Downloads and installs the selected build of each variant. True when all were installed.</summary>
-    public static async Task<bool> InstallAsync(IReadOnlyList<NrVariant> variants)
+    /// <summary>
+    /// Downloads and installs the selected NR build of each variant, plus the RTX Video runtimes
+    /// (VSR, TrueHDR) that are missing. True when everything was installed.
+    /// </summary>
+    public static async Task<bool> InstallAsync(IReadOnlyList<NrVariant> variants, bool video = true)
     {
-        if (Busy || variants.Count == 0) return false;
+        var videoJobs = video ? MissingVideo() : [];
+        if (Busy || variants.Count + videoJobs.Count == 0) return false;
         Busy = true;
         LastFailed = false;
         _cts = new CancellationTokenSource();
@@ -159,8 +186,9 @@ internal static partial class NrRuntimeInstaller
                 var target = Path.Combine(temp, $"{(int)build.Slot}-nvngx_dlssnr.dll");
                 var label = $"DLSS NR {build.Label} ({build.Size / 1048576.0:0} MB)";
                 int index = i;
-                var progress = new Progress<double>(f => Report((index + f) / variants.Count, $"Descargando {label}… {f * 100:0}%"));
-                Report((double)i / variants.Count, $"Conectando con rhi-repo para {build.Tag}…");
+                int count = variants.Count + videoJobs.Count;
+                var progress = new Progress<double>(f => Report((index + f) / count, $"Descargando {label}… {f * 100:0}%"));
+                Report((double)i / count, $"Conectando con rhi-repo para {build.Tag}…");
 
                 string sha;
                 try
@@ -170,8 +198,9 @@ internal static partial class NrRuntimeInstaller
                 catch (Exception ex) when (build.Default && ex is HttpRequestException or InvalidDataException)
                 {
                     // rhi-repo unreachable: Veyra's NVIDIA package carries the same default builds.
-                    Report((double)i / variants.Count, "rhi-repo no respondió; probando el paquete de Veyra…");
-                    sha = await FetchFromVeyraAsync(build.Slot, target, progress, mirror, ct);
+                    Report(i / (double)(variants.Count + videoJobs.Count), "rhi-repo no respondió; probando el paquete de Veyra…");
+                    var member = "runtime/experimental/" + (build.Slot == NrVariant.Original ? "nr-original" : "nr-ampere") + "/nvngx_dlssnr.dll";
+                    sha = await FetchFromVeyraAsync(member, target, progress, mirror, ct);
                 }
 
                 if (!sha.Equals(build.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -184,7 +213,22 @@ internal static partial class NrRuntimeInstaller
                 r.ThrowIfFailed();
                 installed.Add(build.Label);
             }
-            Report(1, "DLSS NR listo: " + string.Join("; ", installed) + ".");
+            int total = variants.Count + videoJobs.Count;
+            for (int j = 0; j < videoJobs.Count; j++)
+            {
+                var rt = videoJobs[j];
+                int index = variants.Count + j;
+                var target = Path.Combine(temp, rt.Dll);
+                var progress = new Progress<double>(f => Report((index + f) / total, $"Descargando {rt.Label} ({rt.Size / 1048576.0:0} MB)… {f * 100:0}%"));
+                Report((double)index / total, $"Preparando {rt.Label}…");
+                var sha = await FetchFromVeyraAsync(rt.Member, target, progress, mirror, ct);
+                if (!sha.Equals(rt.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"{rt.Label}: el archivo descargado no coincide con su SHA-256.");
+                CheckPe(target);
+                Runtimes.Import(target, rt.Feature);
+                installed.Add(rt.Label);
+            }
+            Report(1, "Listo: " + string.Join("; ", installed) + ".");
             return true;
         }
         catch (OperationCanceledException)
@@ -197,7 +241,7 @@ internal static partial class NrRuntimeInstaller
                                        or EngineException or UnauthorizedAccessException or NotSupportedException)
         {
             LastFailed = true;
-            Report(0, "No se pudo instalar DLSS NR: " + ex.Message +
+            Report(0, "No se pudieron instalar los runtimes de NVIDIA: " + ex.Message +
                       (ex is HttpRequestException ? " Prueba otro servidor de descarga en Ajustes." : ""));
             return false;
         }
@@ -255,9 +299,15 @@ internal static partial class NrRuntimeInstaller
         }
     }
 
-    /// <summary>Fallback: the same build out of Veyra's latest NVIDIA portable package.</summary>
-    private static async Task<string> FetchFromVeyraAsync(NrVariant slot, string target, IProgress<double> progress, int mirror,
+    /// <summary>A member of Veyra's latest NVIDIA portable package (only that file is read).</summary>
+    private static async Task<string> FetchFromVeyraAsync(string member, string target, IProgress<double> progress, int mirror,
                                                          CancellationToken ct)
+    {
+        _veyraPackageUrl ??= await FindVeyraPackageAsync(mirror, ct);
+        return await FetchFromZipAsync(Mirrors.Asset(_veyraPackageUrl, mirror), target, progress, ct, member);
+    }
+
+    private static async Task<string> FindVeyraPackageAsync(int mirror, CancellationToken ct)
     {
         var api = Mirrors.Api($"https://api.github.com/repos/{VeyraRepo}/releases?per_page=15", mirror);
         using var request = new HttpRequestMessage(HttpMethod.Get, api);
@@ -270,10 +320,8 @@ internal static partial class NrRuntimeInstaller
             if (release.TryGetProperty("draft", out var d) && d.GetBoolean()) continue;
             foreach (var asset in release.GetProperty("assets").EnumerateArray())
             {
-                if (!VeyraPackage().IsMatch(asset.GetProperty("name").GetString() ?? "")) continue;
-                var url = Mirrors.Asset(asset.GetProperty("browser_download_url").GetString()!, mirror);
-                var member = "runtime/experimental/" + (slot == NrVariant.Original ? "nr-original" : "nr-ampere") + "/nvngx_dlssnr.dll";
-                return await FetchFromZipAsync(url, target, progress, ct, member);
+                if (VeyraPackage().IsMatch(asset.GetProperty("name").GetString() ?? ""))
+                    return asset.GetProperty("browser_download_url").GetString()!;
             }
         }
         throw new InvalidDataException("No se encontró ningún paquete NVIDIA de Veyra publicado.");

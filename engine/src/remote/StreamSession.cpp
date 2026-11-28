@@ -141,6 +141,8 @@ struct StreamSession::Impl {
 
     // Media.
     player::BoundedQueue<VideoSample> samples{6};
+    const Clock::time_point epoch = Clock::now();
+    std::atomic<bool> keyframeWanted{false};
     player::BoundedQueue<std::vector<float>> pcm{12};
     std::unique_ptr<player::IAudioSink> audioSink;
     media::SwrPtr swr;
@@ -229,11 +231,18 @@ struct StreamSession::Impl {
         auto pkt = media::makePacket();
         if (!pkt || av_new_packet(pkt.get(), static_cast<int>(size)) < 0) return false;
         std::memcpy(pkt->data, buf, size);
-        VideoSample s{std::move(pkt), Clock::now()};
+        const auto arrived = Clock::now();
+        // Arrival time as the timestamp (decoder time base is 1/1000000): temporal stages such as
+        // DLSS NR and anti-flicker need increasing timestamps, or every frame looks like a cut.
+        pkt->pts = pkt->dts = std::chrono::duration_cast<std::chrono::microseconds>(arrived - self->epoch).count();
+        VideoSample s{std::move(pkt), arrived};
         if (self->samples.size() >= 6) {
-            // Decoder can't keep up: drop the backlog and ask for a keyframe instead of lagging.
+            // Decoder can't keep up (e.g. while DLSS NR builds its model): drop the backlog, restart
+            // the decoder and ask the console for a keyframe, or the picture stays frozen until the
+            // console sends one on its own.
             self->samples.clear();
             self->resetDecoder = true;
+            self->keyframeWanted = true;
             return false;
         }
         return self->samples.push(std::move(s));
@@ -307,6 +316,10 @@ struct StreamSession::Impl {
                 }
                 std::lock_guard lock(infoMutex);
                 info.hardwareDecode = decoder->hardware();
+            }
+            if (keyframeWanted.exchange(false)) {
+                log::info("remoteplay: decoder fell behind; backlog dropped, keyframe requested");
+                requestKeyframeLocked();
             }
             const auto t0 = Clock::now();
             int rc = decoder->send(sample->packet.get());

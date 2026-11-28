@@ -23,6 +23,16 @@
       "source": "NVIDIA App over-the-air model store"
     },
     {
+      "feature": "rtx_vsr", "file": "nvngx_vsr.dll", "version": "1.6.0.0", "sha256": "c3d88eea5ff7a548edefa66414cf6e77464d0947277c904f324dd23abf58a1ed",
+      "bytes": 19140144, "origin": "official", "label": "RTX Video Super Resolution 1.6.0 (NVIDIA)", "bundled": false,
+      "source": "RTX Video SDK 1.1.0 (= Veyra runtime/experimental/nvngx_vsr.dll)"
+    },
+    {
+      "feature": "rtx_truehdr", "file": "nvngx_truehdr.dll", "version": "1.1.0.0", "sha256": "9a80575f247190c05fe80eac0c4baa1d0d4d932348f26808310b5ec4bf9eeb4b",
+      "bytes": 3955752, "origin": "official", "label": "RTX Video TrueHDR 1.1.0 (NVIDIA)", "bundled": false,
+      "source": "RTX Video SDK 1.1.0 (= Veyra runtime/experimental/nvngx_truehdr.dll)"
+    },
+    {
       "feature": "rtx_vsr", "file": "nvngx_vsr.dll", "version": "1.8.3.0", "sha256": "0cc98643a76c05ca6d73ec81a898d545b18e5c080667d72854a1bfaebd56e1ed",
       "bytes": 59120752, "origin": "official", "label": "RTX Video Super Resolution 1.8.3 (NVIDIA)", "bundled": false,
       "source": "nvidia-vfx 0.2.0.0 wheel"

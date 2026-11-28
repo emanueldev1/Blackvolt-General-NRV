@@ -5,6 +5,7 @@
 #include "ColorMatrix.h"
 #include "core/Log.h"
 #include "gpu/D3D12Context.h"
+#include "ngx/DlssNrSession.h"
 #include "ngx/NgxRuntime.h"
 #include "ngx/VideoSuperResolution.h"
 #include "telemetry/Telemetry.h"
@@ -21,8 +22,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <atomic>
+#include <condition_variable>
+#include <future>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 extern "C" {
@@ -318,6 +324,69 @@ struct D3D12Presenter::Impl {
     ComPtr<ID3D12Resource> shotReadback;
     enhance::NrLocator nrLocator;
     std::unique_ptr<enhance::NeuralRendering> neural;
+    std::shared_ptr<ngx::DlssNrSession> nrSession; // keeps the NR runtime loaded between features
+    struct NrBuilt {
+        std::unique_ptr<enhance::NeuralRendering> feature;
+        enhance::NeuralControls controls{};
+        UINT w = 0, h = 0;
+        std::string note;
+    };
+    std::future<NrBuilt> nrBuild;
+    ComPtr<ID3D12CommandAllocator> nrSetupAllocator;
+    ComPtr<ID3D12GraphicsCommandList> nrSetupList;
+    ComPtr<ID3D12Fence> nrSetupFence;
+    UINT64 nrSetupValue = 0;
+    HANDLE nrSetupEvent = nullptr;
+
+    // Builds an NR feature for the current settings on a worker thread, with its own command list
+    // and fence (command queues are free-threaded).
+    void startNrBuild(UINT w, UINT h) {
+        if (!nrSetupAllocator) {
+            device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&nrSetupAllocator));
+            device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, nrSetupAllocator.Get(), nullptr,
+                                      IID_PPV_ARGS(&nrSetupList));
+            nrSetupList->Close();
+            device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&nrSetupFence));
+            nrSetupEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        }
+        const auto controls = settings.neuralControls;
+        // A different runtime cannot share the loaded one: let it go first.
+        if (neural && neural->variant() != controls.variant && controls.variant != ngx::NrVariant::Auto) {
+            waitIdle();
+            neural.reset();
+            nrSession.reset();
+        }
+        auto keep = nrSession; // the worker must not be the one unloading the runtime under us
+        nrBuild = std::async(std::launch::async, [this, controls, w, h, keep]() mutable {
+            NrBuilt out;
+            out.controls = controls;
+            out.w = w;
+            out.h = h;
+            auto run = [&] {
+                nrSetupAllocator->Reset();
+                nrSetupList->Reset(nrSetupAllocator.Get(), nullptr);
+                auto f = enhance::NeuralRendering::create(ngx, device, nrSetupList.Get(), nrLocator, w, h, controls, &out.note);
+                nrSetupList->Close();
+                ID3D12CommandList* lists[] = {nrSetupList.Get()};
+                queue->ExecuteCommandLists(1, lists);
+                const UINT64 v = ++nrSetupValue;
+                queue->Signal(nrSetupFence.Get(), v);
+                if (nrSetupFence->GetCompletedValue() < v) {
+                    nrSetupFence->SetEventOnCompletion(v, nrSetupEvent);
+                    WaitForSingleObject(nrSetupEvent, 5000);
+                }
+                return f;
+            };
+            out.feature = run();
+            if (!out.feature && keep) {
+                // Another runtime is still loaded (e.g. Auto picked a different one): drop ours and retry.
+                keep.reset();
+                out.note.clear();
+                out.feature = run();
+            }
+            return out;
+        });
+    }
     enhance::NeuralControls neuralBuilt{}; // controls the feature was created with
     UINT neuralW = 0, neuralH = 0;
     bool neuralUnavailable = false;
@@ -330,9 +399,116 @@ struct D3D12Presenter::Impl {
     AVFrame* last = nullptr; // for redraw()
     mutable std::mutex mutex;
 
+    // ---- shared with the UI thread without waiting for `mutex` (held for a whole frame) ----
+    mutable std::mutex shared;
+    std::optional<EnhanceSettings> pending; // set by setEnhance, applied by the next draw
+    EnhanceSettings published;              // what the render path runs with
+    EnhanceStatus statusCopy;               // snapshot published after each frame
+    std::atomic<uint32_t> factor{1};        // interpolation factor, read by the player every frame
+    std::atomic<ULONGLONG> lastDrawTick{0};
+
+    // Redraws the last frame off the caller's thread when nothing is playing (paused, menu, still
+    // stream), so changing a setting shows at once without blocking the UI.
+    std::thread worker;
+    std::condition_variable workerCv;
+    std::mutex workerMutex;
+    bool redrawWanted = false, forceRedraw = false, workerQuit = false;
+
+    void startWorker() {
+        worker = std::thread([this] {
+            std::unique_lock lock(workerMutex);
+            while (true) {
+                workerCv.wait(lock, [&] { return workerQuit || redrawWanted; });
+                if (workerQuit) return;
+                const bool force = forceRedraw;
+                redrawWanted = forceRedraw = false;
+                lock.unlock();
+                // Live video applies the change on its own next frame; only a still picture needs this.
+                std::this_thread::sleep_for(std::chrono::milliseconds(60));
+                if (force || GetTickCount64() - lastDrawTick.load() > 150) {
+                    std::lock_guard drawLock(mutex);
+                    redrawLast();
+                }
+                lock.lock();
+            }
+        });
+    }
+
+    void stopWorker() {
+        {
+            std::lock_guard lock(workerMutex);
+            workerQuit = true;
+        }
+        workerCv.notify_all();
+        if (worker.joinable()) worker.join();
+    }
+
+    void requestRedraw(bool force = false) {
+        {
+            std::lock_guard lock(workerMutex);
+            redrawWanted = true;
+            forceRedraw = forceRedraw || force;
+        }
+        workerCv.notify_one();
+    }
+
+    // With `mutex` held.
+    void redrawLast() {
+        if (!last) {
+            takePending();
+            return;
+        }
+        AVFrame* copy = av_frame_clone(last);
+        draw(*copy);
+        av_frame_free(&copy);
+    }
+
+    void publishStatus() {
+        std::lock_guard lock(shared);
+        statusCopy = status;
+    }
+
+    // With `mutex` held: applies settings handed over by setEnhance().
+    void takePending() {
+        std::optional<EnhanceSettings> next;
+        {
+            std::lock_guard lock(shared);
+            next.swap(pending);
+        }
+        if (!next || *next == settings) return;
+        const EnhanceSettings& in = *next;
+        // A fresh request gets a fresh attempt (e.g. after a driver update or turning HDR on).
+        if (in.vsr != settings.vsr) vsrUnavailable = false;
+        // Turning NR on again, or choosing another runtime / model / size, gets a fresh attempt.
+        if (in.neural != settings.neural || !in.neuralControls.sameFeature(settings.neuralControls)) neuralUnavailable = false;
+        if (in.trueHdr != settings.trueHdr) {
+            hdrUnavailable = false;
+            hdrDisplay = displayHdrInfo(&hdrPeak);
+        }
+        settings = in;
+        settings.interpolation = std::clamp<uint32_t>(in.interpolation, 1, 4);
+        settings.denoise = std::min<uint32_t>(in.denoise, 3);
+        settings.sharpness = std::clamp(in.sharpness, 0.0f, 1.0f);
+        settings.vsrQuality = std::clamp<uint32_t>(in.vsrQuality, 1, 4);
+        if (!settings.vsr) status.gpuVsrMs = 0;
+        if (!settings.neural) {
+            status.gpuNeuralMs = 0;
+            status.gpuNrPrepareMs = 0;
+            status.gpuNrCompositeMs = 0;
+        }
+        if (!settings.trueHdr) status.gpuHdrMs = 0;
+        std::lock_guard lock(shared);
+        published = settings;
+        statusCopy = status;
+    }
+
     ~Impl() {
+        if (nrBuild.valid()) nrBuild.wait();
+        nrBuild = {};
         waitIdle();
         neural.reset();
+        nrSession.reset();
+        if (nrSetupEvent) CloseHandle(nrSetupEvent);
         interp.reset();
         denoiser.reset();
         nis.reset();
@@ -617,18 +793,20 @@ struct D3D12Presenter::Impl {
             if (present) neuralUnavailable = neuralMissingRuntime = false;
         }
         p.neural = settings.neural && !neuralUnavailable;
-        if (p.neural && (!neural || neuralW != inW || neuralH != inH || !neuralBuilt.sameFeature(settings.neuralControls))) {
-            waitIdle();
-            neural.reset();
-            neuralNote.clear();
-            neural = runSetup([&](ID3D12GraphicsCommandList* cl) {
-                return enhance::NeuralRendering::create(ngx, device, cl, nrLocator, inW, inH, settings.neuralControls,
-                                                        &neuralNote);
-            });
-            neuralBuilt = settings.neuralControls;
-            neuralW = inW;
-            neuralH = inH;
-            if (!neural) {
+        // NR features take 1-2 s to build. They are built on a worker thread while the video keeps
+        // playing (without NR, or with the previous feature until the swap) instead of freezing it.
+        if (nrBuild.valid() && nrBuild.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            auto built = nrBuild.get();
+            if (built.feature && built.controls.sameFeature(settings.neuralControls) && built.w == inW && built.h == inH) {
+                waitIdle();
+                neural = std::move(built.feature);
+                nrSession = neural->session();
+                neuralBuilt = built.controls;
+                neuralW = built.w;
+                neuralH = built.h;
+                lastPts = AV_NOPTS_VALUE; // fresh history
+            } else if (!built.feature && built.controls.sameFeature(settings.neuralControls)) {
+                neuralNote = built.note;
                 neuralUnavailable = true;
                 p.neural = false;
                 const auto wanted = settings.neuralControls.variant;
@@ -638,13 +816,21 @@ struct D3D12Presenter::Impl {
                                                          : nrLocator(wanted).empty());
                 log::info("DLSS NR not available: {}", neuralNote);
             }
+            // A build for settings that changed meanwhile is dropped; the check below starts the right one.
+        }
+        const bool nrCurrent = neural && neuralW == inW && neuralH == inH && neuralBuilt.sameFeature(settings.neuralControls);
+        if (p.neural && !nrCurrent && !nrBuild.valid()) startNrBuild(inW, inH);
+        if (p.neural && !nrCurrent) {
+            // Still building: no NR meanwhile (one thread at a time inside nvngx_dlssnr.dll).
+            p.neural = false;
+            status.neuralNote = "Preparando DLSS NR…";
         }
         if (!settings.neural && neural) {
             waitIdle();
             neural.reset(); // free the VRAM and the NR session when the user turns it off
         }
         if (settings.neural && neuralUnavailable) status.flags |= EnhanceStatus::NeuralUnavailable;
-        status.neuralNote = settings.neural && neuralUnavailable ? neuralNote : std::string();
+        if (!(settings.neural && nrBuild.valid())) status.neuralNote = settings.neural && neuralUnavailable ? neuralNote : std::string();
         if (p.neural && neural) {
             status.nrWidth = neural->nrWidth();
             status.nrHeight = neural->nrHeight();
@@ -947,6 +1133,8 @@ struct D3D12Presenter::Impl {
     // interpT < 0: show `frame`. 0 < interpT < 1: show a frame generated between the last real
     // frame and `frame` (which is staged, not shown).
     bool draw(const AVFrame& frame, float interpT = -1.0f) {
+        takePending();
+        lastDrawTick = GetTickCount64();
         const Plan plan = this->plan(frame);
         if (interpT >= 0 && (!plan.interp || !curSlotValid)) return false;
 
@@ -1215,6 +1403,7 @@ struct D3D12Presenter::Impl {
         frameFence[bb] = ++fenceValue;
         queue->Signal(fence.Get(), frameFence[bb]);
 
+        publishStatus();
         // Keep the decoder surface alive until the GPU has sampled it.
         inFlight[bb] = av_frame_clone(&frame);
         if (last != &frame) {
@@ -1303,12 +1492,13 @@ std::unique_ptr<D3D12Presenter> D3D12Presenter::create(gpu::D3D12Context& gpu, n
     return std::unique_ptr<D3D12Presenter>(new D3D12Presenter(std::move(impl)));
 }
 
-D3D12Presenter::D3D12Presenter(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
-D3D12Presenter::~D3D12Presenter() = default;
+D3D12Presenter::D3D12Presenter(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) { impl_->startWorker(); }
+D3D12Presenter::~D3D12Presenter() {
+    if (impl_) impl_->stopWorker();
+}
 
 unsigned D3D12Presenter::interpolationFactor() const {
-    std::lock_guard lock(impl_->mutex);
-    return std::clamp<unsigned>(impl_->settings.interpolation, 1, 4);
+    return impl_->factor.load();
 }
 
 bool D3D12Presenter::presentInterpolated(const AVFrame& next, float t) {
@@ -1349,11 +1539,7 @@ bool D3D12Presenter::present(const AVFrame& frame) {
 
 void D3D12Presenter::redraw() {
     std::lock_guard lock(impl_->mutex);
-    if (impl_->last) {
-        AVFrame* copy = av_frame_clone(impl_->last);
-        impl_->draw(*copy);
-        av_frame_free(&copy);
-    }
+    impl_->redrawLast();
 }
 
 void D3D12Presenter::resize(uint32_t width, uint32_t height, float scaleX, float scaleY) {
@@ -1366,50 +1552,30 @@ void D3D12Presenter::resize(uint32_t width, uint32_t height, float scaleX, float
             impl_->swapChain->SetMatrixTransform(&m);
         }
     }
-    redraw();
+    impl_->requestRedraw(/*force=*/true);
 }
 
 IDXGISwapChain1* D3D12Presenter::swapChain() const { return impl_->swapChain.Get(); }
 
 void D3D12Presenter::setEnhance(const EnhanceSettings& settings) {
+    // Never waits for the render path (which may be building an NGX feature for a second or two):
+    // the settings are handed over and picked up by the next frame, or by the redraw worker.
     {
-        std::lock_guard lock(impl_->mutex);
-        if (impl_->settings == settings) return;
-        // A fresh request gets a fresh attempt (e.g. after a driver update or turning HDR on).
-        if (settings.vsr != impl_->settings.vsr) impl_->vsrUnavailable = false;
-        impl_->settings.interpolation = std::clamp<uint32_t>(settings.interpolation, 1, 4);
-        impl_->settings.denoise = std::min<uint32_t>(settings.denoise, 3);
-        impl_->settings.sharpness = std::clamp(settings.sharpness, 0.0f, 1.0f);
-        // Turning NR on again, or choosing another runtime / model / size, gets a fresh attempt.
-        if (settings.neural != impl_->settings.neural ||
-            !settings.neuralControls.sameFeature(impl_->settings.neuralControls)) {
-            impl_->neuralUnavailable = false;
-        }
-        if (settings.trueHdr != impl_->settings.trueHdr) {
-            impl_->hdrUnavailable = false;
-            impl_->hdrDisplay = displayHdrInfo(&impl_->hdrPeak);
-        }
-        impl_->settings = settings;
-        impl_->settings.vsrQuality = std::clamp<uint32_t>(settings.vsrQuality, 1, 4);
-        if (!settings.vsr) impl_->status.gpuVsrMs = 0;
-        if (!settings.neural) {
-            impl_->status.gpuNeuralMs = 0;
-            impl_->status.gpuNrPrepareMs = 0;
-            impl_->status.gpuNrCompositeMs = 0;
-        }
-        if (!settings.trueHdr) impl_->status.gpuHdrMs = 0;
+        std::lock_guard lock(impl_->shared);
+        impl_->pending = settings;
+        impl_->factor = std::clamp<uint32_t>(settings.interpolation, 1, 4);
     }
-    redraw();
+    impl_->requestRedraw();
 }
 
 EnhanceSettings D3D12Presenter::enhance() const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->settings;
+    std::lock_guard lock(impl_->shared);
+    return impl_->pending ? *impl_->pending : impl_->published;
 }
 
 EnhanceStatus D3D12Presenter::enhanceStatus() const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->status;
+    std::lock_guard lock(impl_->shared);
+    return impl_->statusCopy;
 }
 
 double D3D12Presenter::refreshInterval() const {

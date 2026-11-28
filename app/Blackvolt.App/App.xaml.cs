@@ -94,6 +94,7 @@ public partial class App : Application
         EngineError = null;
         try
         {
+            Services.EngineLog.Start();
             Runtimes.Configure();
             Engine = EngineSession.Start();
         }
