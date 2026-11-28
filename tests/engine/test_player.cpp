@@ -37,7 +37,7 @@ class RealtimeSink final : public IAudioSink {
 public:
     int sampleRate() const override { return 48000; }
     int channels() const override { return 2; }
-    bool write(const float*, std::size_t frames, double pts) override {
+    bool write(const float*, std::size_t frames, double pts, double) override {
         if (stopped) return false;
         std::this_thread::sleep_for(std::chrono::duration<double>(double(frames) / 48000.0));
         position = pts + double(frames) / 48000.0;

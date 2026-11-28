@@ -10,7 +10,24 @@ public partial class App : Application
 
     public App()
     {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrash("AppDomain", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) => WriteCrash("Task", e.Exception);
+        UnhandledException += (_, e) => WriteCrash("XAML", e.Exception);
         InitializeComponent();
+    }
+
+    /// <summary>Appends an unhandled exception to %LOCALAPPDATA%\Blackvolt\crash.log.</summary>
+    internal static void WriteCrash(string source, Exception? ex)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Blackvolt");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "crash.log"),
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     /// <summary>Engine session shared by all pages. Null when no compatible GPU was found.</summary>
