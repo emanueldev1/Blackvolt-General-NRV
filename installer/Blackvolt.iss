@@ -41,7 +41,7 @@ WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\Blackvolt.exe
-SetupIconFile=..pp\Blackvolt.App\Assets\Blackvolt.ico
+SetupIconFile=..\app\Blackvolt.App\Assets\Blackvolt.ico
 UninstallDisplayName=Blackvolt
 
 [Languages]
